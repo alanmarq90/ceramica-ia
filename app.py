@@ -1,9 +1,9 @@
 # ============================================================
-# CERÂMICAIÁ v9.0 — Com Persistência Local e Edição de Chaves (Código)
+# CERÂMICAIÁ v10.0 — Gestão Dinâmica de Barros e Produtos (SaaS Completo)
 # ============================================================
 
 import io
-import os  # Adicionado para suporte à persistência em disco
+import os
 import urllib.parse
 from datetime import datetime
 import joblib
@@ -36,13 +36,13 @@ st.markdown(
 )
 st.markdown(
     '<div class="sub-header">Previsão em tempo real, controle de corte'
-    " dimensional, gestão de barros e cálculo de perdas</div>",
+    " dimensional, gestão de barros/produtos e cálculo de perdas</div>",
     unsafe_allow_html=True,
 )
 st.divider()
 
 # ============================================================
-# PERSISTÊNCIA DE DADOS EM DISCO (EVITA RESET NO IPHONE)
+# DADOS INICIAIS (SEED) DO SISTEMA
 # ============================================================
 BARROS_INICIAIS = [
     {
@@ -68,6 +68,45 @@ BARROS_INICIAIS = [
     },
 ]
 
+PRODUTOS_INICIAIS = [
+    {
+        "chave_comercial": "01-BLP (9x19x19 cm) — Vedação Padrão",
+        "codigo": "01-BLP",
+        "largura": 9.0,
+        "comprimento_nominal": 19.0,
+        "comp_seco_ideal": 20.0,
+        "peso_padrao": 2.800,
+        "status": "Ativo",
+    },
+    {
+        "chave_comercial": "BP14 (14x19x19 cm) — Estrutural Curto",
+        "codigo": "BP14",
+        "largura": 14.0,
+        "comprimento_nominal": 19.0,
+        "comp_seco_ideal": 20.0,
+        "peso_padrao": 3.800,
+        "status": "Ativo",
+    },
+    {
+        "chave_comercial": "02-BLG (9x19x39 cm) — Bloco Grande / Canaleta 9",
+        "codigo": "02-BLG",
+        "largura": 9.0,
+        "comprimento_nominal": 39.0,
+        "comp_seco_ideal": 40.0,
+        "peso_padrao": 5.500,
+        "status": "Ativo",
+    },
+    {
+        "chave_comercial": "BG14 (14x19x39 cm) — Estrutural Grande 14",
+        "codigo": "BG14",
+        "largura": 14.0,
+        "comprimento_nominal": 39.0,
+        "comp_seco_ideal": 40.0,
+        "peso_padrao": 7.000,
+        "status": "Ativo",
+    },
+]
+
 HISTORICO_BASE_CSV = """data,modo,cod_barro_preto,cod_barro_amarelo,cod_barro_branco,preto_a,amarelo_a,branco_a,preto_b,amarelo_b,branco_b,pct_preto,pct_amarelo,pct_branco,umidade,residuo,retracao,esp_parede,peso,comprimento,tipo_bloco,class_residuo,excesso_peso,observacoes
 2025-03-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,33.7,3,0.90,3.600,20.4,01-BLP,fraco,800,Histórico inicial
 2025-03-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,32.0,3,0.85,3.185,20.5,01-BLP,limite,385,Histórico inicial
@@ -77,7 +116,11 @@ HISTORICO_BASE_CSV = """data,modo,cod_barro_preto,cod_barro_amarelo,cod_barro_br
 2025-08-18,Unica,02_BR_ARG_VERM_STPREZ,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,32.0,4,0.675,3.020,20.1,01-BLP,limite,220,Histórico Clessinho / Prazeres
 2026-09-02,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,17.0,30.0,3,0.68,2.935,20.3,01-BLP,ideal,135,Histórico recente 3 barros"""
 
-# 1. Carregar ou Inicializar Catálogo de Barros com persistência local
+# ============================================================
+# CARREGAMENTO DAS BASES DE DADOS COM PERSISTÊNCIA EM DISCO
+# ============================================================
+
+# 1. Catálogo de Barros
 if "catalogo_barros" not in st.session_state:
   if os.path.exists("db_catalogo_barros.csv"):
     st.session_state.catalogo_barros = pd.read_csv("db_catalogo_barros.csv")
@@ -87,7 +130,19 @@ if "catalogo_barros" not in st.session_state:
         "db_catalogo_barros.csv", index=False
     )
 
-# 2. Carregar ou Inicializar Base Histórica com persistência local
+# 2. Catálogo de Produtos (NOVO NA v10.0)
+if "catalogo_produtos" not in st.session_state:
+  if os.path.exists("db_catalogo_produtos.csv"):
+    st.session_state.catalogo_produtos = pd.read_csv(
+        "db_catalogo_produtos.csv"
+    )
+  else:
+    st.session_state.catalogo_produtos = pd.DataFrame(PRODUTOS_INICIAIS)
+    st.session_state.catalogo_produtos.to_csv(
+        "db_catalogo_produtos.csv", index=False
+    )
+
+# 3. Base Histórica de Lotes
 if "df_master" not in st.session_state:
   if os.path.exists("db_df_master.csv"):
     st.session_state.df_master = pd.read_csv("db_df_master.csv")
@@ -95,7 +150,7 @@ if "df_master" not in st.session_state:
     st.session_state.df_master = pd.read_csv(io.StringIO(HISTORICO_BASE_CSV))
     st.session_state.df_master.to_csv("db_df_master.csv", index=False)
 
-# 3. Carregar ou Inicializar Análises de Barro Puro com persistência local
+# 4. Análises de Barro Puro (Recebimento)
 if "analises_puro" not in st.session_state:
   if os.path.exists("db_analises_puro.csv"):
     st.session_state.analises_puro = pd.read_csv("db_analises_puro.csv")
@@ -129,44 +184,13 @@ except Exception as e:
   st.error(f"Erro ao carregar os arquivos de modelo .pkl: {e}")
   st.stop()
 
-# CATALOGO DE PRODUTOS
-CATALOGO_PRODUTOS = {
-    "01-BLP (9x19x19 cm) — Vedação Padrão": {
-        "largura": 9,
-        "comprimento_nominal": 19,
-        "comp_seco_ideal": 20.0,
-        "peso_padrao": 2.800,
-        "codigo": "01-BLP",
-    },
-    "BP14 (14x19x19 cm) — Estrutural Curto": {
-        "largura": 14,
-        "comprimento_nominal": 19,
-        "comp_seco_ideal": 20.0,
-        "peso_padrao": 3.800,
-        "codigo": "BP14",
-    },
-    "02-BLG (9x19x39 cm) — Bloco Grande / Canaleta 9": {
-        "largura": 9,
-        "comprimento_nominal": 39,
-        "comp_seco_ideal": 40.0,
-        "peso_padrao": 5.500,
-        "codigo": "02-BLG",
-    },
-    "BG14 (14x19x39 cm) — Estrutural Grande 14": {
-        "largura": 14,
-        "comprimento_nominal": 39,
-        "comp_seco_ideal": 40.0,
-        "peso_padrao": 7.000,
-        "codigo": "BG14",
-    },
-}
-
 # ABAS PRINCIPAIS
-tab_diag, tab_reg, tab_puro, tab_barros = st.tabs([
+tab_diag, tab_reg, tab_puro, tab_barros, tab_produtos = st.tabs([
     "🔮 Diagnóstico & Previsão",
     "📝 Registrar Análise de Mistura",
     "🧪 Análise de Barro Puro (Recebimento)",
     "🧱 Cadastrar / Gerenciar Barros",
+    "📦 Cadastrar / Gerenciar Produtos",
 ])
 
 # ============================================================
@@ -175,20 +199,35 @@ tab_diag, tab_reg, tab_puro, tab_barros = st.tabs([
 with tab_diag:
   st.sidebar.header("⚙️ Configurações do Lote")
 
+  # Carrega os produtos ativos dinamicamente do banco de dados
+  df_prod_ativos = st.session_state.catalogo_produtos[
+      st.session_state.catalogo_produtos["status"] == "Ativo"
+  ]
+
+  if len(df_prod_ativos) == 0:
+    st.sidebar.error(
+        "Nenhum produto ativo cadastrado! Vá na aba 'Gerenciar Produtos'."
+    )
+    st.stop()
+
   produto_sel = st.sidebar.selectbox(
-      "Selecione o Produto em Produção:", list(CATALOGO_PRODUTOS.keys())
+      "Selecione o Produto em Produção:",
+      df_prod_ativos["chave_comercial"].tolist(),
   )
 
-  dados_prod = CATALOGO_PRODUTOS[produto_sel]
-  largura_cm = dados_prod["largura"]
-  comp_seco_ideal = dados_prod["comp_seco_ideal"]
-  peso_padrao = dados_prod["peso_padrao"]
+  dados_prod = df_prod_ativos[
+      df_prod_ativos["chave_comercial"] == produto_sel
+  ].iloc[0]
+  largura_cm = float(dados_prod["largura"])
+  comp_seco_ideal = float(dados_prod["comp_seco_ideal"])
+  peso_padrao = float(dados_prod["peso_padrao"])
   codigo_prod = dados_prod["codigo"]
+  comprimento_nominal = float(dados_prod["comprimento_nominal"])
 
   st.sidebar.info(
       f"**Meta de Peso Padrão:** {peso_padrao:.3f} kg\n\n**Comprimento Seco"
       f" Ideal:** {comp_seco_ideal:.1f} cm (para resultar em"
-      f" {dados_prod['comprimento_nominal']} cm após queima)"
+      f" {comprimento_nominal:.1f} cm após queima)"
   )
 
   st.header("🧱 Seleção dos Barros Cadastrados")
@@ -239,11 +278,19 @@ with tab_diag:
       preto_a = st.number_input("Conchas de Preto", 0, 10, 4, 1)
     with c2:
       amarelo_a = st.number_input(
-          "Conchas de Amarelo", 0, 10, 0 if sel_barro_amarelo == "Nenhum" else 1, 1
+          "Conchas de Amarelo",
+          0,
+          10,
+          0 if sel_barro_amarelo == "Nenhum" else 1,
+          1,
       )
     with c3:
       branco_a = st.number_input(
-          "Conchas de Branco", 0, 10, 1 if sel_barro_branco != "Nenhum" else 0, 1
+          "Conchas de Branco",
+          0,
+          10,
+          1 if sel_barro_branco != "Nenhum" else 0,
+          1,
       )
 
     preto_b, amarelo_b, branco_b = preto_a, amarelo_a, branco_a
@@ -435,7 +482,7 @@ with tab_diag:
     st.divider()
     msg_wa_diag = f"""🧱 *CerâmicaIA — Diagnóstico de Mistura*
         
-📌 *Produto:* {codigo_prod} ({largura_cm}x19x{dados_prod['comprimento_nominal']}cm)
+📌 *Produto:* {codigo_prod} ({largura_cm}x19x{comprimento_nominal}cm)
 🧱 *Barro Argiloso:* {sel_barro_preto}
 🧱 *Barro Arenoso:* {sel_barro_branco}
 📊 *Mistura:* {mistura_desc} | 💧 *Umid:* {umidade}% | 📏 *Esp:* {esp_parede}cm
@@ -479,16 +526,26 @@ with tab_reg:
       df_barros_ativos_reg["tipo_base"] == "Branco"
   ]["codigo"].tolist()
 
+  df_prod_ativos_reg = st.session_state.catalogo_produtos[
+      st.session_state.catalogo_produtos["status"] == "Ativo"
+  ]
+
   with st.form("form_registro_lote", clear_on_submit=True):
     st.subheader("1. Identificação e Barro Utilizado")
     f_col1, f_col2, f_col3 = st.columns(3)
     with f_col1:
       data_lote = st.date_input("Data do Teste", datetime.now())
       prod_lote = st.selectbox(
-          "Produto Testado", list(CATALOGO_PRODUTOS.keys())
+          "Produto Testado", df_prod_ativos_reg["chave_comercial"].tolist()
       )
-      codigo_selecionado = CATALOGO_PRODUTOS[prod_lote]["codigo"]
-      comp_seco_sugerido = CATALOGO_PRODUTOS[prod_lote]["comp_seco_ideal"]
+
+      row_prod_reg = df_prod_ativos_reg[
+          df_prod_ativos_reg["chave_comercial"] == prod_lote
+      ].iloc[0]
+      codigo_selecionado = row_prod_reg["codigo"]
+      comp_seco_sugerido = float(row_prod_reg["comp_seco_ideal"])
+      peso_meta_l = float(row_prod_reg["peso_padrao"])
+
     with f_col2:
       cod_p_reg = st.selectbox(
           "Código Barro Preto:",
@@ -573,7 +630,6 @@ with tab_reg:
           if residuo_real > 32
           else ("forte" if residuo_real < 28 else "ideal")
       )
-      peso_meta_l = CATALOGO_PRODUTOS[prod_lote]["peso_padrao"]
       excesso_l = (peso_real - peso_meta_l) * 1000
 
       novo_row = {
@@ -608,7 +664,6 @@ with tab_reg:
           ignore_index=True,
       )
 
-      # Persistir gravação de teste em disco local
       st.session_state.df_master.to_csv("db_df_master.csv", index=False)
 
       st.success("✅ Lote registrado com sucesso com o Comprimento Seco Medido!")
@@ -725,8 +780,9 @@ with tab_puro:
             ignore_index=True,
         )
 
-        # Persistir teste de barro puro em disco local
-        st.session_state.analises_puro.to_csv("db_analises_puro.csv", index=False)
+        st.session_state.analises_puro.to_csv(
+            "db_analises_puro.csv", index=False
+        )
 
         st.success(
             f"✅ Laudo do Barro `{cod_puro_sel}` ({pct_calculada:.1f}% resíduo)"
@@ -791,7 +847,6 @@ with tab_barros:
                 ignore_index=True,
             )
 
-            # Persistir cadastro novo em disco local
             st.session_state.catalogo_barros.to_csv(
                 "db_catalogo_barros.csv", index=False
             )
@@ -814,9 +869,9 @@ with tab_barros:
       ].iloc[0]
 
       with st.form("form_editar_barro"):
-        # ATUALIZAÇÃO v9.0: Campo para editar o próprio código!
         edit_cod = st.text_input(
-            "Código Oficial (Editar se necessário):", value=dados_atual["codigo"]
+            "Código Oficial (Editar se necessário):",
+            value=dados_atual["codigo"],
         )
         edit_nome = st.text_input("Nome / Apelido:", value=dados_atual["nome"])
         lista_tipos = ["Preto", "Amarelo", "Branco"]
@@ -854,7 +909,6 @@ with tab_barros:
 
           if not edit_cod_clean:
             st.error("❌ O código do barro não pode ser vazio.")
-          # Valida se o novo código já existe em outro registro que não seja ele mesmo
           elif (
               edit_cod_clean != barro_edit_sel
               and edit_cod_clean
@@ -864,9 +918,7 @@ with tab_barros:
                 f"❌ O código `{edit_cod_clean}` já existe em outro cadastro!"
             )
           else:
-            # 1. ATUALIZAÇÃO EM CASCATA: Se mudou o código chave, varre os históricos e atualiza as referências
             if edit_cod_clean != barro_edit_sel:
-              # Na tabela df_master (Histórico de Produção)
               st.session_state.df_master["cod_barro_preto"] = (
                   st.session_state.df_master["cod_barro_preto"].replace(
                       barro_edit_sel, edit_cod_clean
@@ -882,21 +934,17 @@ with tab_barros:
                       barro_edit_sel, edit_cod_clean
                   )
               )
-              # Salva base histórica atualizada
               st.session_state.df_master.to_csv("db_df_master.csv", index=False)
 
-              # Na tabela analises_puro (Laboratório do Barro Puro)
               st.session_state.analises_puro["codigo_barro"] = (
                   st.session_state.analises_puro["codigo_barro"].replace(
                       barro_edit_sel, edit_cod_clean
                   )
               )
-              # Salva base de barro puro atualizada
               st.session_state.analises_puro.to_csv(
                   "db_analises_puro.csv", index=False
               )
 
-            # 2. Atualiza o cadastro do Barro
             st.session_state.catalogo_barros.at[idx_muda, "codigo"] = (
                 edit_cod_clean
             )
@@ -913,7 +961,6 @@ with tab_barros:
                 edit_status
             )
 
-            # 3. Salva em disco local de forma persistente
             st.session_state.catalogo_barros.to_csv(
                 "db_catalogo_barros.csv", index=False
             )
@@ -926,3 +973,244 @@ with tab_barros:
   st.divider()
   st.subheader("📋 Tabela Geral de Barros Cadastrados")
   st.dataframe(st.session_state.catalogo_barros, use_container_width=True)
+
+# ============================================================
+# ABA 5: CADASTRO E GESTÃO DE PRODUTOS / BLOCOS (NOVA v10.0)
+# ============================================================
+with tab_produtos:
+  st.header("📦 Cadastro e Controle de Produtos / Blocos")
+  st.caption(
+      "Adicione novos produtos do seu portfólio de vendas, ajuste as metas de"
+      " peso padrão, dimensões e comprimento de corte nominal."
+  )
+
+  col_prod1, col_prod2 = st.columns(2)
+
+  with col_prod1:
+    st.subheader("➕ Cadastrar Novo Produto")
+    with st.form("form_novo_produto", clear_on_submit=True):
+      n_prod_cod = st.text_input("Código do Bloco (ex: BP14, 01-BLP):")
+      n_prod_nome = st.text_input(
+          "Descrição Comercial (ex: Bloco 8 Furos 9x19x19):"
+      )
+
+      c_dim1, c_dim2, c_dim3 = st.columns(3)
+      with c_dim1:
+        n_prod_larg = st.number_input("Largura (cm):", 5.0, 30.0, 9.0, 0.5)
+      with c_dim2:
+        n_prod_comp_nom = st.number_input(
+            "Comprimento Nominal pós-queima (cm):", 5.0, 50.0, 19.0, 0.5
+        )
+      with c_dim3:
+        n_prod_comp_sec = st.number_input(
+            "Comprimento Seco Ideal de Corte (cm):", 5.0, 55.0, 20.0, 0.5
+        )
+
+      n_prod_peso = st.number_input(
+          "Meta de Peso Padrão (kg):",
+          0.500,
+          15.000,
+          2.800,
+          0.050,
+          format="%.3f",
+      )
+
+      btn_cad_prod = st.form_submit_button(
+          "📦 Cadastrar Produto", type="primary", use_container_width=True
+      )
+
+      if btn_cad_prod:
+        if n_prod_cod and n_prod_nome:
+          prod_cod_clean = n_prod_cod.strip().upper()
+          if (
+              prod_cod_clean
+              in st.session_state.catalogo_produtos["codigo"].values
+          ):
+            st.error(
+                f"❌ O código de produto `{prod_cod_clean}` já está cadastrado!"
+            )
+          else:
+            nova_chave = (
+                f"{prod_cod_clean} ({n_prod_larg:.0f}x{n_prod_comp_nom:.0f}x{n_prod_comp_nom:.0f}"
+                f" cm) — {n_prod_nome.strip()}"
+            )
+
+            novo_prod_dict = {
+                "chave_comercial": nova_chave,
+                "codigo": prod_cod_clean,
+                "largura": n_prod_larg,
+                "comprimento_nominal": n_prod_comp_nom,
+                "comp_seco_ideal": n_prod_comp_sec,
+                "peso_padrao": n_prod_peso,
+                "status": "Ativo",
+            }
+
+            st.session_state.catalogo_produtos = pd.concat(
+                [
+                    st.session_state.catalogo_produtos,
+                    pd.DataFrame([novo_prod_dict]),
+                ],
+                ignore_index=True,
+            )
+
+            st.session_state.catalogo_produtos.to_csv(
+                "db_catalogo_produtos.csv", index=False
+            )
+
+            st.success(
+                f"✅ Produto `{prod_cod_clean}` cadastrado com sucesso!"
+            )
+            st.rerun()
+        else:
+          st.error("Preencha o Código e a Descrição Comercial.")
+
+  with col_prod2:
+    st.subheader("✏️ Editar Produto Existente")
+    lista_produtos_cod = st.session_state.catalogo_produtos["codigo"].tolist()
+
+    if len(lista_produtos_cod) > 0:
+      prod_edit_sel = st.selectbox(
+          "Selecione o Produto para Editar:", lista_produtos_cod
+      )
+      dados_prod_atual = st.session_state.catalogo_produtos[
+          st.session_state.catalogo_produtos["codigo"] == prod_edit_sel
+      ].iloc[0]
+
+      with st.form("form_editar_produto"):
+        edit_prod_cod = st.text_input(
+            "Código do Produto (Editar se necessário):",
+            value=dados_prod_atual["codigo"],
+        )
+        # Extrai a descrição do formato: "CODIGO (dimensões) — descrição"
+        try:
+          descricao_atual = dados_prod_atual["chave_comercial"].split(" — ")[-1]
+        except:
+          descricao_atual = dados_prod_atual["chave_comercial"]
+
+        edit_prod_nome = st.text_input(
+            "Descrição Comercial:", value=descricao_atual
+        )
+
+        ce_dim1, ce_dim2, ce_dim3 = st.columns(3)
+        with ce_dim1:
+          edit_prod_larg = st.number_input(
+              "Largura (cm):",
+              5.0,
+              30.0,
+              float(dados_prod_atual["largura"]),
+              0.5,
+          )
+        with ce_dim2:
+          edit_prod_comp_nom = st.number_input(
+              "Comprimento Nominal pós-queima (cm):",
+              5.0,
+              50.0,
+              float(dados_prod_atual["comprimento_nominal"]),
+              0.5,
+          )
+        with ce_dim3:
+          edit_prod_comp_sec = st.number_input(
+              "Comprimento Seco Ideal de Corte (cm):",
+              5.0,
+              55.0,
+              float(dados_prod_atual["comp_seco_ideal"]),
+              0.5,
+          )
+
+        edit_prod_peso = st.number_input(
+            "Meta de Peso Padrão (kg):",
+            0.500,
+            15.000,
+            float(dados_prod_atual["peso_padrao"]),
+            0.050,
+            format="%.3f",
+        )
+
+        lista_status_p = ["Ativo", "Inativo"]
+        idx_status_p = (
+            lista_status_p.index(dados_prod_atual["status"])
+            if dados_prod_atual["status"] in lista_status_p
+            else 0
+        )
+        edit_prod_status = st.selectbox(
+            "Status do Produto:", lista_status_p, index=idx_status_p
+        )
+
+        btn_salvar_prod_edit = st.form_submit_button(
+            "💾 Salvar Alterações de Produto",
+            type="primary",
+            use_container_width=True,
+        )
+
+        if btn_salvar_prod_edit:
+          idx_prod_muda = st.session_state.catalogo_produtos[
+              st.session_state.catalogo_produtos["codigo"] == prod_edit_sel
+          ].index[0]
+
+          edit_prod_cod_clean = edit_prod_cod.strip().upper()
+
+          if not edit_prod_cod_clean:
+            st.error("❌ O código do produto não pode ser vazio.")
+          elif (
+              edit_prod_cod_clean != prod_edit_sel
+              and edit_prod_cod_clean
+              in st.session_state.catalogo_produtos["codigo"].values
+          ):
+            st.error(
+                f"❌ O código `{edit_prod_cod_clean}` já existe em outro"
+                " produto!"
+            )
+          else:
+            # ATUALIZAÇÃO EM CASCATA no histórico de lotes
+            if edit_prod_cod_clean != prod_edit_sel:
+              st.session_state.df_master["tipo_bloco"] = (
+                  st.session_state.df_master["tipo_bloco"].replace(
+                      prod_edit_sel, edit_prod_cod_clean
+                  )
+              )
+              st.session_state.df_master.to_csv(
+                  "db_df_master.csv", index=False
+              )
+
+            # Regenera a chave comercial padronizada
+            nova_chave_edit = (
+                f"{edit_prod_cod_clean} ({edit_prod_larg:.0f}x{edit_prod_comp_nom:.0f}x{edit_prod_comp_nom:.0f}"
+                f" cm) — {edit_prod_nome.strip()}"
+            )
+
+            # Atualiza os dados no cadastro
+            st.session_state.catalogo_produtos.at[
+                idx_prod_muda, "codigo"
+            ] = edit_prod_cod_clean
+            st.session_state.catalogo_produtos.at[
+                idx_prod_muda, "chave_comercial"
+            ] = nova_chave_edit
+            st.session_state.catalogo_produtos.at[
+                idx_prod_muda, "largura"
+            ] = edit_prod_larg
+            st.session_state.catalogo_produtos.at[
+                idx_prod_muda, "comprimento_nominal"
+            ] = edit_prod_comp_nom
+            st.session_state.catalogo_produtos.at[
+                idx_prod_muda, "comp_seco_ideal"
+            ] = edit_prod_comp_sec
+            st.session_state.catalogo_produtos.at[
+                idx_prod_muda, "peso_padrao"
+            ] = edit_prod_peso
+            st.session_state.catalogo_produtos.at[
+                idx_prod_muda, "status"
+            ] = edit_prod_status
+
+            # Persistência em disco
+            st.session_state.catalogo_produtos.to_csv(
+                "db_catalogo_produtos.csv", index=False
+            )
+
+            st.success(
+                "✅ Produto atualizado e referências corrigidas em cascata!"
+            )
+            st.rerun()
+
+  st.divider()
+  st.subheader("📋 Tabela Geral de Produtos / Blocos Cadastrados")
+  st.dataframe(st.session_state.catalogo_produtos, use_container_width=True)
