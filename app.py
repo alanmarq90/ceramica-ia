@@ -1,5 +1,5 @@
 # ============================================================
-# CERÂMICAIÁ v7.0 — Limpeza de UX (WhatsApp Apenas no Essencial)
+# CERÂMICAIÁ v8.0 — Com Controle Dimensional de Comprimento e Corte
 # ============================================================
 
 import io
@@ -34,8 +34,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<div class="sub-header">Previsão em tempo real, gestão de barros puros por'
-    " jazida e controle de matéria-prima</div>",
+    '<div class="sub-header">Previsão em tempo real, controle de corte'
+    " dimensional, gestão de barros e cálculo de perdas</div>",
     unsafe_allow_html=True,
 )
 st.divider()
@@ -110,29 +110,33 @@ except Exception as e:
   st.error(f"Erro ao carregar os arquivos de modelo .pkl: {e}")
   st.stop()
 
-# CATALOGO DE PRODUTOS
+# CATALOGO DE PRODUTOS COM DIMENSÕES IDEAIS SECA E QUEIMADA
 CATALOGO_PRODUTOS = {
     "01-BLP (9x19x19 cm) — Vedação Padrão": {
         "largura": 9,
-        "comprimento": 19,
+        "comprimento_nominal": 19,
+        "comp_seco_ideal": 20.0,
         "peso_padrao": 2.800,
         "codigo": "01-BLP",
     },
     "BP14 (14x19x19 cm) — Estrutural Curto": {
         "largura": 14,
-        "comprimento": 19,
+        "comprimento_nominal": 19,
+        "comp_seco_ideal": 20.0,
         "peso_padrao": 3.800,
         "codigo": "BP14",
     },
     "02-BLG (9x19x39 cm) — Bloco Grande / Canaleta 9": {
         "largura": 9,
-        "comprimento": 39,
+        "comprimento_nominal": 39,
+        "comp_seco_ideal": 40.0,
         "peso_padrao": 5.500,
         "codigo": "02-BLG",
     },
     "BG14 (14x19x39 cm) — Estrutural Grande 14": {
         "largura": 14,
-        "comprimento": 39,
+        "comprimento_nominal": 39,
+        "comp_seco_ideal": 40.0,
         "peso_padrao": 7.000,
         "codigo": "BG14",
     },
@@ -158,13 +162,14 @@ with tab_diag:
 
   dados_prod = CATALOGO_PRODUTOS[produto_sel]
   largura_cm = dados_prod["largura"]
-  comprimento_cm = dados_prod["comprimento"]
+  comp_seco_ideal = dados_prod["comp_seco_ideal"]
   peso_padrao = dados_prod["peso_padrao"]
   codigo_prod = dados_prod["codigo"]
 
   st.sidebar.info(
-      f"**Meta de Peso Padrão:** {peso_padrao:.3f} kg\n\n**Dimensão:**"
-      f" {largura_cm}x19x{comprimento_cm} cm"
+      f"**Meta de Peso Padrão:** {peso_padrao:.3f} kg\n\n**Comprimento Seco"
+      f" Ideal:** {comp_seco_ideal:.1f} cm (para resultar em"
+      f" {dados_prod['comprimento_nominal']} cm após queima)"
   )
 
   st.header("🧱 Seleção dos Barros Cadastrados")
@@ -266,13 +271,27 @@ with tab_diag:
   )
 
   st.divider()
-  st.header("🔬 Parâmetros do Processo")
+  st.header("🔬 Parâmetros de Processo e Dimensão de Corte")
 
-  col_u, col_e = st.columns(2)
+  col_u, col_e, col_c = st.columns(3)
   with col_u:
     umidade = st.number_input("Umidade do Barro (%)", 5.0, 30.0, 16.0, 0.5)
   with col_e:
-    esp_parede = st.number_input("Espessura da Parede (cm)", 0.20, 1.50, 0.65, 0.01)
+    esp_parede = st.number_input(
+        "Espessura da Parede (cm)", 0.20, 1.50, 0.65, 0.01
+    )
+  with col_c:
+    comprimento_cm = st.number_input(
+        "Comprimento Seco do Bloco (cm):",
+        15.0,
+        45.0,
+        float(comp_seco_ideal),
+        0.1,
+        help=(
+            f"Tamanho ideal seco para este produto é {comp_seco_ideal:.1f} cm."
+            " Se a guilhotina cortar maior (ex: 20,4 cm), o peso aumenta!"
+        ),
+    )
 
   st.divider()
 
@@ -297,6 +316,24 @@ with tab_diag:
     pred_pes = m_pes.predict(X_input)[0]
 
     st.header("📊 Resultados Previstos pela IA")
+
+    # ALERTA DE CORTE DIMENSIONAL
+    diff_comp = comprimento_cm - comp_seco_ideal
+    if diff_comp > 0.15:
+      st.warning(
+          f"📏 **ALERTA DE CORTE NO CARRETEL:** Bloco seco cortado com"
+          f" **{comprimento_cm:.1f} cm** (+{diff_comp*10:.0f} mm acima do ideal"
+          f" de {comp_seco_ideal:.1f} cm). Esse excesso de comprimento aumenta"
+          " o peso do bloco! Ajuste a guilhotina da extrusora."
+      )
+    elif diff_comp < -0.15:
+      st.warning(
+          f"📏 **ATENÇÃO AO CORTE:** Bloco seco cortado com"
+          f" **{comprimento_cm:.1f} cm** (-{abs(diff_comp)*10:.0f} mm abaixo do"
+          f" ideal de {comp_seco_ideal:.1f} cm). Risco de ficar curto após a"
+          " queima."
+      )
+
     res1, res2, res3 = st.columns(3)
 
     with res1:
@@ -323,6 +360,10 @@ with tab_diag:
 
     with res2:
       st.metric("Retração Prevista", f"{pred_ret:.1f}%")
+      comp_estimado_queimado = comprimento_cm * (1 - (pred_ret / 100))
+      st.caption(
+          f"Comprimento Fired/Queimado Est.: **{comp_estimado_queimado:.1f} cm**"
+      )
       if pred_ret > 4.5:
         st.warning("⚡ Retração Elevada (Atenção no secador)")
       else:
@@ -375,14 +416,15 @@ with tab_diag:
     st.divider()
     msg_wa_diag = f"""🧱 *CerâmicaIA — Diagnóstico de Mistura*
         
-📌 *Produto:* {codigo_prod} ({largura_cm}x19x{comprimento_cm}cm)
+📌 *Produto:* {codigo_prod} ({largura_cm}x19x{dados_prod['comprimento_nominal']}cm)
 🧱 *Barro Argiloso:* {sel_barro_preto}
 🧱 *Barro Arenoso:* {sel_barro_branco}
 📊 *Mistura:* {mistura_desc} | 💧 *Umid:* {umidade}% | 📏 *Esp:* {esp_parede}cm
+📏 *Comp. Seco:* {comprimento_cm:.1f} cm (Ideal: {comp_seco_ideal:.1f} cm)
 
 📊 *PREVISÃO DA IA:*
 • *Resíduo:* {pred_res:.1f}% ({class_res})
-• *Retração:* {pred_ret:.1f}%
+• *Retração:* {pred_ret:.1f}% (Final queimado Est: {comp_estimado_queimado:.1f} cm)
 • *Peso Est.:* {pred_pes:.3f} kg ({excesso_g:+.0f}g vs Meta){texto_fin_wa}
 
 💡 *Gerado pelo CerâmicaIA App*"""
@@ -427,7 +469,7 @@ with tab_reg:
           "Produto Testado", list(CATALOGO_PRODUTOS.keys())
       )
       codigo_selecionado = CATALOGO_PRODUTOS[prod_lote]["codigo"]
-      comprimento_selecionado = CATALOGO_PRODUTOS[prod_lote]["comprimento"]
+      comp_seco_sugerido = CATALOGO_PRODUTOS[prod_lote]["comp_seco_ideal"]
     with f_col2:
       cod_p_reg = st.selectbox(
           "Código Barro Preto:",
@@ -456,7 +498,7 @@ with tab_reg:
       a_b = st.number_input("Amarelo B", 0, 10, a_a)
       b_b = st.number_input("Branco B", 0, 10, b_a)
 
-    st.subheader("3. Medições do Laboratório")
+    st.subheader("3. Medições Reais do Laboratório e Dimensão de Corte")
     f_col4, f_col5, f_col6, f_col7 = st.columns(4)
     with f_col4:
       umidade_real = st.number_input(
@@ -475,12 +517,23 @@ with tab_reg:
           "Espessura Parede (cm)", 0.0, 2.0, 0.65, 0.01
       )
 
-    f_col8, f_col9 = st.columns(2)
+    f_col8, f_col9, f_col10 = st.columns(3)
     with f_col8:
+      comp_real_medido = st.number_input(
+          "Comprimento Seco Medido (cm):",
+          10.0,
+          50.0,
+          float(comp_seco_sugerido),
+          0.1,
+          help=(
+              "Tamanho medido com paquímetro/trena no bloco seco (ex: 20.4 cm)"
+          ),
+      )
+    with f_col9:
       peso_real = st.number_input(
           "Peso Real Medido (kg)", 0.0, 15.0, 3.100, 0.001
       )
-    with f_col9:
+    with f_col10:
       obs_texto = st.text_area("💬 Observações:", "Teste de rotina")
 
     btn_salvar = st.form_submit_button(
@@ -524,7 +577,7 @@ with tab_reg:
           "retracao": retracao_real,
           "esp_parede": esp_real,
           "peso": peso_real,
-          "comprimento": comprimento_selecionado,
+          "comprimento": comp_real_medido,
           "tipo_bloco": codigo_selecionado,
           "class_residuo": class_res_l,
           "excesso_peso": round(excesso_l, 0),
@@ -535,18 +588,17 @@ with tab_reg:
           [pd.DataFrame([novo_row]), st.session_state.df_master],
           ignore_index=True,
       )
-      st.success("✅ Lote registrado com sucesso!")
+      st.success("✅ Lote registrado com sucesso com o Comprimento Seco Medido!")
 
       msg_wa_reg = f"""📝 *CerâmicaIA — Registro de Lab Real*
             
 📌 *Data:* {data_lote.strftime('%d/%m/%Y')} | *Produto:* {codigo_selecionado}
-🧱 *Barro Preto:* {cod_p_reg}
-🧱 *Barro Branco:* {cod_b_reg}
+🧱 *Barro Preto:* {cod_p_reg} | *Branco:* {cod_b_reg}
 🧪 *MENSURAÇÕES REAIS:*
 • *Resíduo:* {residuo_real}% ({class_res_l.upper()})
 • *Umidade:* {umidade_real}% | *Retração:* {retracao_real}%
+• *Comp. Seco:* {comp_real_medido:.1f} cm | *Espessura:* {esp_real} cm
 • *Peso Real:* {peso_real:.3f} kg ({excesso_l:+.0f}g vs meta)
-• *Espessura:* {esp_real} cm
 
 💬 *Obs:* {obs_texto}"""
 
