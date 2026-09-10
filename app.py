@@ -1,8 +1,9 @@
 # ============================================================
-# CERÂMICAIÁ v8.0 — Com Controle Dimensional de Comprimento e Corte
+# CERÂMICAIÁ v9.0 — Com Persistência Local e Edição de Chaves (Código)
 # ============================================================
 
 import io
+import os  # Adicionado para suporte à persistência em disco
 import urllib.parse
 from datetime import datetime
 import joblib
@@ -40,7 +41,9 @@ st.markdown(
 )
 st.divider()
 
-# 1. CATALOGO DE BARROS INICIAIS
+# ============================================================
+# PERSISTÊNCIA DE DADOS EM DISCO (EVITA RESET NO IPHONE)
+# ============================================================
 BARROS_INICIAIS = [
     {
         "codigo": "01_BR_ARG_PRETO_SV",
@@ -65,20 +68,6 @@ BARROS_INICIAIS = [
     },
 ]
 
-if "catalogo_barros" not in st.session_state:
-  st.session_state.catalogo_barros = pd.DataFrame(BARROS_INICIAIS)
-
-if "analises_puro" not in st.session_state:
-  st.session_state.analises_puro = pd.DataFrame(columns=[
-      "data",
-      "codigo_barro",
-      "peso_amostra_g",
-      "peso_residuo_g",
-      "pct_residuo_puro",
-      "observacoes",
-  ])
-
-# 2. BASE HISTÓRICA INICIAL
 HISTORICO_BASE_CSV = """data,modo,cod_barro_preto,cod_barro_amarelo,cod_barro_branco,preto_a,amarelo_a,branco_a,preto_b,amarelo_b,branco_b,pct_preto,pct_amarelo,pct_branco,umidade,residuo,retracao,esp_parede,peso,comprimento,tipo_bloco,class_residuo,excesso_peso,observacoes
 2025-03-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,33.7,3,0.90,3.600,20.4,01-BLP,fraco,800,Histórico inicial
 2025-03-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,32.0,3,0.85,3.185,20.5,01-BLP,limite,385,Histórico inicial
@@ -88,8 +77,38 @@ HISTORICO_BASE_CSV = """data,modo,cod_barro_preto,cod_barro_amarelo,cod_barro_br
 2025-08-18,Unica,02_BR_ARG_VERM_STPREZ,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,32.0,4,0.675,3.020,20.1,01-BLP,limite,220,Histórico Clessinho / Prazeres
 2026-09-02,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,17.0,30.0,3,0.68,2.935,20.3,01-BLP,ideal,135,Histórico recente 3 barros"""
 
+# 1. Carregar ou Inicializar Catálogo de Barros com persistência local
+if "catalogo_barros" not in st.session_state:
+  if os.path.exists("db_catalogo_barros.csv"):
+    st.session_state.catalogo_barros = pd.read_csv("db_catalogo_barros.csv")
+  else:
+    st.session_state.catalogo_barros = pd.DataFrame(BARROS_INICIAIS)
+    st.session_state.catalogo_barros.to_csv(
+        "db_catalogo_barros.csv", index=False
+    )
+
+# 2. Carregar ou Inicializar Base Histórica com persistência local
 if "df_master" not in st.session_state:
-  st.session_state.df_master = pd.read_csv(io.StringIO(HISTORICO_BASE_CSV))
+  if os.path.exists("db_df_master.csv"):
+    st.session_state.df_master = pd.read_csv("db_df_master.csv")
+  else:
+    st.session_state.df_master = pd.read_csv(io.StringIO(HISTORICO_BASE_CSV))
+    st.session_state.df_master.to_csv("db_df_master.csv", index=False)
+
+# 3. Carregar ou Inicializar Análises de Barro Puro com persistência local
+if "analises_puro" not in st.session_state:
+  if os.path.exists("db_analises_puro.csv"):
+    st.session_state.analises_puro = pd.read_csv("db_analises_puro.csv")
+  else:
+    st.session_state.analises_puro = pd.DataFrame(columns=[
+        "data",
+        "codigo_barro",
+        "peso_amostra_g",
+        "peso_residuo_g",
+        "pct_residuo_puro",
+        "observacoes",
+    ])
+    st.session_state.analises_puro.to_csv("db_analises_puro.csv", index=False)
 
 if "diagnostico_gerado" not in st.session_state:
   st.session_state.diagnostico_gerado = False
@@ -110,7 +129,7 @@ except Exception as e:
   st.error(f"Erro ao carregar os arquivos de modelo .pkl: {e}")
   st.stop()
 
-# CATALOGO DE PRODUTOS COM DIMENSÕES IDEAIS SECA E QUEIMADA
+# CATALOGO DE PRODUTOS
 CATALOGO_PRODUTOS = {
     "01-BLP (9x19x19 cm) — Vedação Padrão": {
         "largura": 9,
@@ -588,6 +607,10 @@ with tab_reg:
           [pd.DataFrame([novo_row]), st.session_state.df_master],
           ignore_index=True,
       )
+
+      # Persistir gravação de teste em disco local
+      st.session_state.df_master.to_csv("db_df_master.csv", index=False)
+
       st.success("✅ Lote registrado com sucesso com o Comprimento Seco Medido!")
 
       msg_wa_reg = f"""📝 *CerâmicaIA — Registro de Lab Real*
@@ -701,6 +724,10 @@ with tab_puro:
             [pd.DataFrame([novo_puro_dict]), st.session_state.analises_puro],
             ignore_index=True,
         )
+
+        # Persistir teste de barro puro em disco local
+        st.session_state.analises_puro.to_csv("db_analises_puro.csv", index=False)
+
         st.success(
             f"✅ Laudo do Barro `{cod_puro_sel}` ({pct_calculada:.1f}% resíduo)"
             " registrado com sucesso!"
@@ -763,6 +790,12 @@ with tab_barros:
                 ],
                 ignore_index=True,
             )
+
+            # Persistir cadastro novo em disco local
+            st.session_state.catalogo_barros.to_csv(
+                "db_catalogo_barros.csv", index=False
+            )
+
             st.success(f"✅ Barro `{cod_clean}` cadastrado!")
             st.rerun()
         else:
@@ -781,6 +814,10 @@ with tab_barros:
       ].iloc[0]
 
       with st.form("form_editar_barro"):
+        # ATUALIZAÇÃO v9.0: Campo para editar o próprio código!
+        edit_cod = st.text_input(
+            "Código Oficial (Editar se necessário):", value=dados_atual["codigo"]
+        )
         edit_nome = st.text_input("Nome / Apelido:", value=dados_atual["nome"])
         lista_tipos = ["Preto", "Amarelo", "Branco"]
         idx_tipo = (
@@ -812,18 +849,79 @@ with tab_barros:
           idx_muda = st.session_state.catalogo_barros[
               st.session_state.catalogo_barros["codigo"] == barro_edit_sel
           ].index[0]
-          st.session_state.catalogo_barros.at[idx_muda, "nome"] = (
-              edit_nome.strip()
-          )
-          st.session_state.catalogo_barros.at[idx_muda, "tipo_base"] = (
-              edit_tipo
-          )
-          st.session_state.catalogo_barros.at[idx_muda, "localidade"] = (
-              edit_loc.strip()
-          )
-          st.session_state.catalogo_barros.at[idx_muda, "status"] = edit_status
-          st.success(f"✅ Barro `{barro_edit_sel}` atualizado com sucesso!")
-          st.rerun()
+
+          edit_cod_clean = edit_cod.strip().upper()
+
+          if not edit_cod_clean:
+            st.error("❌ O código do barro não pode ser vazio.")
+          # Valida se o novo código já existe em outro registro que não seja ele mesmo
+          elif (
+              edit_cod_clean != barro_edit_sel
+              and edit_cod_clean
+              in st.session_state.catalogo_barros["codigo"].values
+          ):
+            st.error(
+                f"❌ O código `{edit_cod_clean}` já existe em outro cadastro!"
+            )
+          else:
+            # 1. ATUALIZAÇÃO EM CASCATA: Se mudou o código chave, varre os históricos e atualiza as referências
+            if edit_cod_clean != barro_edit_sel:
+              # Na tabela df_master (Histórico de Produção)
+              st.session_state.df_master["cod_barro_preto"] = (
+                  st.session_state.df_master["cod_barro_preto"].replace(
+                      barro_edit_sel, edit_cod_clean
+                  )
+              )
+              st.session_state.df_master["cod_barro_amarelo"] = (
+                  st.session_state.df_master["cod_barro_amarelo"].replace(
+                      barro_edit_sel, edit_cod_clean
+                  )
+              )
+              st.session_state.df_master["cod_barro_branco"] = (
+                  st.session_state.df_master["cod_barro_branco"].replace(
+                      barro_edit_sel, edit_cod_clean
+                  )
+              )
+              # Salva base histórica atualizada
+              st.session_state.df_master.to_csv("db_df_master.csv", index=False)
+
+              # Na tabela analises_puro (Laboratório do Barro Puro)
+              st.session_state.analises_puro["codigo_barro"] = (
+                  st.session_state.analises_puro["codigo_barro"].replace(
+                      barro_edit_sel, edit_cod_clean
+                  )
+              )
+              # Salva base de barro puro atualizada
+              st.session_state.analises_puro.to_csv(
+                  "db_analises_puro.csv", index=False
+              )
+
+            # 2. Atualiza o cadastro do Barro
+            st.session_state.catalogo_barros.at[idx_muda, "codigo"] = (
+                edit_cod_clean
+            )
+            st.session_state.catalogo_barros.at[idx_muda, "nome"] = (
+                edit_nome.strip()
+            )
+            st.session_state.catalogo_barros.at[idx_muda, "tipo_base"] = (
+                edit_tipo
+            )
+            st.session_state.catalogo_barros.at[idx_muda, "localidade"] = (
+                edit_loc.strip()
+            )
+            st.session_state.catalogo_barros.at[idx_muda, "status"] = (
+                edit_status
+            )
+
+            # 3. Salva em disco local de forma persistente
+            st.session_state.catalogo_barros.to_csv(
+                "db_catalogo_barros.csv", index=False
+            )
+
+            st.success(
+                "✅ Barro atualizado e referências corrigidas em cascata!"
+            )
+            st.rerun()
 
   st.divider()
   st.subheader("📋 Tabela Geral de Barros Cadastrados")
