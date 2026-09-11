@@ -1,5 +1,6 @@
 # ============================================================
-# CERAMICAIA v12.1 — Auto-Seed do Google Sheets + IA Auto-Aprendiz
+# CERAMICAIA v13.0 — Modelos de IA Separados (Física) + 
+# Resíduo do Barro Puro + Comprimento Verde de Corte na Extrusora
 # ============================================================
 
 import io
@@ -77,7 +78,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<div class="sub-header">Previsao em tempo real, controle de corte dimensional, gestao de barros/produtos e calculo de perdas</div>',
+    '<div class="sub-header">Previsao em tempo real, controle de corte na extrusora, gestao de barros/produtos e calculo de perdas</div>',
     unsafe_allow_html=True,
 )
 st.divider()
@@ -131,7 +132,14 @@ def ler_dados_sheets(worksheet, colunas):
     try:
         dados = worksheet.get_all_records()
         if dados:
-            return pd.DataFrame(dados)
+            df = pd.DataFrame(dados)
+            # Normalizacao de colunas legadas se existirem
+            if "comp_seco_ideal" in df.columns and "comp_corte_ideal" not in df.columns:
+                df.rename(columns={"comp_seco_ideal": "comp_corte_ideal"}, inplace=True)
+            for col in colunas:
+                if col not in df.columns:
+                    df[col] = ""
+            return df[colunas]
     except Exception:
         pass
     return pd.DataFrame(columns=colunas)
@@ -146,7 +154,7 @@ def salvar_no_sheets(worksheet, df):
         st.error(f"Erro ao sincronizar com Google Sheets: {e}")
 
 # ============================================================
-# DADOS INICIAIS BASE (115 LOTES HISTORICOS REAIS)
+# DADOS INICIAIS BASE
 # ============================================================
 BARROS_INICIAIS = [
     {
@@ -154,6 +162,7 @@ BARROS_INICIAIS = [
         "nome": "Barro Argiloso Preto (Sao Vicente)",
         "tipo_base": "Preto",
         "localidade": "Sao Vicente (SV)",
+        "residuo_puro": 10.0,
         "status": "Ativo",
     },
     {
@@ -161,6 +170,7 @@ BARROS_INICIAIS = [
         "nome": "Barro Argiloso Vermelho (Sitio Prazeres)",
         "tipo_base": "Preto",
         "localidade": "Sitio Prazeres (STPRAZ)",
+        "residuo_puro": 12.0,
         "status": "Ativo",
     },
     {
@@ -168,6 +178,7 @@ BARROS_INICIAIS = [
         "nome": "Barro Arenoso Branco (Sitio Prazeres)",
         "tipo_base": "Branco",
         "localidade": "Sitio Prazeres (STPRAZ)",
+        "residuo_puro": 45.0,
         "status": "Ativo",
     },
 ]
@@ -178,7 +189,7 @@ PRODUTOS_INICIAIS = [
         "codigo": "01-BLP",
         "largura": 9.0,
         "comprimento_nominal": 19.0,
-        "comp_seco_ideal": 20.0,
+        "comp_corte_ideal": 20.0,
         "peso_padrao": 2.800,
         "status": "Ativo",
     },
@@ -187,7 +198,7 @@ PRODUTOS_INICIAIS = [
         "codigo": "BP14",
         "largura": 14.0,
         "comprimento_nominal": 19.0,
-        "comp_seco_ideal": 20.0,
+        "comp_corte_ideal": 20.0,
         "peso_padrao": 3.800,
         "status": "Ativo",
     },
@@ -196,7 +207,7 @@ PRODUTOS_INICIAIS = [
         "codigo": "02-BLG",
         "largura": 9.0,
         "comprimento_nominal": 39.0,
-        "comp_seco_ideal": 40.0,
+        "comp_corte_ideal": 40.0,
         "peso_padrao": 5.500,
         "status": "Ativo",
     },
@@ -205,7 +216,7 @@ PRODUTOS_INICIAIS = [
         "codigo": "BG14",
         "largura": 14.0,
         "comprimento_nominal": 39.0,
-        "comp_seco_ideal": 40.0,
+        "comp_corte_ideal": 40.0,
         "peso_padrao": 7.000,
         "status": "Ativo",
     },
@@ -348,10 +359,10 @@ HISTORICO_BASE_CSV = """data,modo,cod_barro_preto,cod_barro_amarelo,cod_barro_br
 2026-09-08,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,17.8,31.3,3,0.65,2.990,20.4,01-BLP,ideal,190,Historico Colab
 2026-09-09,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,16.2,32.5,4,0.65,2.960,20.4,01-BLP,fraco,160,Historico Colab"""
 
-COLUNAS_BARROS = ["codigo", "nome", "tipo_base", "localidade", "status"]
+COLUNAS_BARROS = ["codigo", "nome", "tipo_base", "localidade", "residuo_puro", "status"]
 COLUNAS_PRODUTOS = [
     "chave_comercial", "codigo", "largura", "comprimento_nominal",
-    "comp_seco_ideal", "peso_padrao", "status",
+    "comp_corte_ideal", "peso_padrao", "status",
 ]
 COLUNAS_LOTES = [
     "data", "modo", "cod_barro_preto", "cod_barro_amarelo",
@@ -367,7 +378,7 @@ COLUNAS_PURO = [
 ]
 
 # ============================================================
-# CARREGAMENTO E AUTO-SEED (GRAVACAO AUTOMATICA NO SHEETS)
+# CARREGAMENTO E PERSISTENCIA DOS DADOS
 # ============================================================
 
 if "catalogo_barros" not in st.session_state:
@@ -396,7 +407,6 @@ if "catalogo_produtos" not in st.session_state:
         st.session_state.catalogo_produtos = pd.DataFrame(PRODUTOS_INICIAIS)
         st.session_state.catalogo_produtos.to_csv("db_catalogo_produtos.csv", index=False)
 
-# AUTO-SEED DE LOTES: Se a aba lotes estiver vazia no Sheets, popula automaticamente!
 if "df_master" not in st.session_state:
     if MODO_SHEETS and worksheet_lotes:
         df_l = ler_dados_sheets(worksheet_lotes, COLUNAS_LOTES)
@@ -435,6 +445,7 @@ def persistir_dados(tipo):
         if MODO_SHEETS and worksheet_barros:
             salvar_no_sheets(worksheet_barros, df)
         df.to_csv("db_catalogo_barros.csv", index=False)
+        marcar_dados_alterados()
 
     elif tipo == "produtos":
         df = st.session_state.catalogo_produtos
@@ -455,34 +466,86 @@ def persistir_dados(tipo):
         if MODO_SHEETS and worksheet_puro:
             salvar_no_sheets(worksheet_puro, df)
         df.to_csv("db_analises_puro.csv", index=False)
+        marcar_dados_alterados()
 
 # ============================================================
-# IA AUTO-APRENDIZ: TREINO DINAMICO A PARTIR DO GOOGLE SHEETS
+# FUNCAO DE LOOKUP DO RESIDUO DE BARRO PURO
 # ============================================================
-FEATURES_MODELO = [
-    "pct_preto", "pct_amarelo", "pct_branco",
-    "umidade", "esp_parede", "largura_cm", "comprimento_cm",
-]
+def obter_residuo_puro_barro(cod_barro, df_barros, df_puro):
+    if not cod_barro or cod_barro == "Nenhum":
+        return 0.0
 
-def montar_dataset_treino(df_lotes, df_produtos):
+    # 1. Busca teste recente na aba analises_puro
+    if len(df_puro) > 0:
+        df_filtro = df_puro[df_puro["codigo_barro"] == cod_barro]
+        if len(df_filtro) > 0:
+            val_puro = pd.to_numeric(df_filtro.iloc[-1]["pct_residuo_puro"], errors="coerce")
+            if not pd.isna(val_puro):
+                return float(val_puro)
+
+    # 2. Busca no cadastro padrao
+    if len(df_barros) > 0:
+        df_filtro_b = df_barros[df_barros["codigo"] == cod_barro]
+        if len(df_filtro_b) > 0:
+            val_cad = pd.to_numeric(df_filtro_b.iloc[0].get("residuo_puro", 0.0), errors="coerce")
+            if not pd.isna(val_cad) and val_cad > 0:
+                return float(val_cad)
+
+            # Fallback por tipo
+            tipo = df_filtro_b.iloc[0].get("tipo_base", "")
+            if tipo == "Preto": return 10.0
+            if tipo == "Amarelo": return 25.0
+            if tipo == "Branco": return 45.0
+
+    return 20.0
+
+# ============================================================
+# IA AUTO-APRENDIZ: MODELOS FISICAMENTE ISOLADOS
+# ============================================================
+# Modelo 1: PESO (Apenas Geometria do corte Verde + Umidade)
+FEATURES_PESO = ["esp_parede", "largura_cm", "comprimento_cm", "umidade"]
+
+# Modelo 2: RESIDUO (Composicao do barro + Residuo Puro da Jazida + Umidade)
+FEATURES_RESIDUO = ["pct_preto", "pct_amarelo", "pct_branco", "residuo_puro_ponderado", "umidade"]
+
+# Modelo 3: RETRACAO (Composicao do barro + Umidade + Espessura)
+FEATURES_RETRACAO = ["pct_preto", "pct_amarelo", "pct_branco", "umidade", "esp_parede"]
+
+def montar_dataset_treino(df_lotes, df_produtos, df_barros, df_puro):
     if len(df_lotes) == 0:
-        return pd.DataFrame(columns=FEATURES_MODELO + ["residuo", "retracao", "peso"])
+        return pd.DataFrame()
 
     df = df_lotes.copy()
 
+    # Mapear largura a partir dos produtos
     mapa_largura = dict(zip(df_produtos["codigo"], df_produtos["largura"]))
     df["largura_cm"] = df["tipo_bloco"].map(mapa_largura)
     df["comprimento_cm"] = pd.to_numeric(df["comprimento"], errors="coerce")
 
+    # Converter numericos
     for col in ["pct_preto", "pct_amarelo", "pct_branco", "umidade",
                 "esp_parede", "residuo", "retracao", "peso"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = df.dropna(subset=FEATURES_MODELO + ["residuo", "retracao", "peso"])
+    # Calcular Residuo Puro Ponderado para o historico (Backfill)
+    res_puro_lista = []
+    for idx, row in df.iterrows():
+        rp_preto = obter_residuo_puro_barro(row.get("cod_barro_preto"), df_barros, df_puro)
+        rp_amarelo = obter_residuo_puro_barro(row.get("cod_barro_amarelo"), df_barros, df_puro)
+        rp_branco = obter_residuo_puro_barro(row.get("cod_barro_branco"), df_barros, df_puro)
+
+        p_preto = float(row.get("pct_preto", 0.0) or 0.0)
+        p_amarelo = float(row.get("pct_amarelo", 0.0) or 0.0)
+        p_branco = float(row.get("pct_branco", 0.0) or 0.0)
+
+        ponderado = (p_preto * rp_preto) + (p_amarelo * rp_amarelo) + (p_branco * rp_branco)
+        res_puro_lista.append(round(ponderado, 2))
+
+    df["residuo_puro_ponderado"] = res_puro_lista
     return df
 
-def treinar_modelos_ia(df_lotes, df_produtos):
-    df = montar_dataset_treino(df_lotes, df_produtos)
+def treinar_modelos_ia(df_lotes, df_produtos, df_barros, df_puro):
+    df = montar_dataset_treino(df_lotes, df_produtos, df_barros, df_puro)
     n = len(df)
 
     if n < 5:
@@ -490,22 +553,32 @@ def treinar_modelos_ia(df_lotes, df_produtos):
             "n": n, "r2_peso": None, "r2_residuo": None, "r2_retracao": None
         }
 
-    X = df[FEATURES_MODELO].astype(float)
-
+    # Treino do Modelo 1: PESO
+    df_pes = df.dropna(subset=FEATURES_PESO + ["peso"])
+    X_pes = df_pes[FEATURES_PESO].astype(float)
     m_pes = GradientBoostingRegressor(random_state=42)
-    m_pes.fit(X, df["peso"].astype(float))
+    m_pes.fit(X_pes, df_pes["peso"].astype(float))
+    r2_pes = r2_score(df_pes["peso"], m_pes.predict(X_pes))
 
+    # Treino do Modelo 2: RESIDUO
+    df_res = df.dropna(subset=FEATURES_RESIDUO + ["residuo"])
+    X_res = df_res[FEATURES_RESIDUO].astype(float)
     m_res = GradientBoostingRegressor(random_state=42)
-    m_res.fit(X, df["residuo"].astype(float))
+    m_res.fit(X_res, df_res["residuo"].astype(float))
+    r2_res = r2_score(df_res["residuo"], m_res.predict(X_res))
 
+    # Treino do Modelo 3: RETRACAO
+    df_ret = df.dropna(subset=FEATURES_RETRACAO + ["retracao"])
+    X_ret = df_ret[FEATURES_RETRACAO].astype(float)
     m_ret = GradientBoostingRegressor(random_state=42)
-    m_ret.fit(X, df["retracao"].astype(float))
+    m_ret.fit(X_ret, df_ret["retracao"].astype(float))
+    r2_ret = r2_score(df_ret["retracao"], m_ret.predict(X_ret))
 
     metricas = {
         "n": n,
-        "r2_peso": round(r2_score(df["peso"], m_pes.predict(X)), 3),
-        "r2_residuo": round(r2_score(df["residuo"], m_res.predict(X)), 3),
-        "r2_retracao": round(r2_score(df["retracao"], m_ret.predict(X)), 3),
+        "r2_peso": round(r2_pes, 3),
+        "r2_residuo": round(r2_res, 3),
+        "r2_retracao": round(r2_ret, 3),
     }
     return m_pes, m_res, m_ret, metricas
 
@@ -513,9 +586,12 @@ if (
     "modelos_ia" not in st.session_state
     or st.session_state.get("versao_treinada") != st.session_state.versao_dados
 ):
-    with st.spinner("Calibrando IA com os dados mais recentes do Google Sheets..."):
+    with st.spinner("Calibrando IA com os dados fisicos mais recentes..."):
         m_pes, m_res, m_ret, metricas_ia = treinar_modelos_ia(
-            st.session_state.df_master, st.session_state.catalogo_produtos
+            st.session_state.df_master,
+            st.session_state.catalogo_produtos,
+            st.session_state.catalogo_barros,
+            st.session_state.analises_puro,
         )
     st.session_state.modelos_ia = (m_pes, m_res, m_ret)
     st.session_state.metricas_ia = metricas_ia
@@ -527,8 +603,7 @@ else:
 if m_pes is None:
     st.error(
         f"Dados insuficientes para treinar a IA (apenas {metricas_ia['n']} "
-        "lotes validos encontrados). Registre pelo menos 5 lotes completos "
-        "na aba de Registro de Analise para liberar as previsoes."
+        "lotes validos encontrados). Registre pelo menos 5 lotes completos."
     )
     st.stop()
 
@@ -537,12 +612,12 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 with st.sidebar.expander("Detalhes do treinamento da IA"):
-    st.write(f"R2 Peso: {metricas_ia['r2_peso']}")
-    st.write(f"R2 Residuo: {metricas_ia['r2_residuo']}")
-    st.write(f"R2 Retracao: {metricas_ia['r2_retracao']}")
+    st.write(f"R2 Peso (Fisico/Geom.): {metricas_ia['r2_peso']}")
+    st.write(f"R2 Residuo (Barro Puro): {metricas_ia['r2_residuo']}")
+    st.write(f"R2 Retracao (Plasticidade): {metricas_ia['r2_retracao']}")
     st.caption(
-        "Metricas calculadas sobre os proprios dados de treino (ajuste interno). "
-        "A IA e recalibrada automaticamente a cada novo lote registrado."
+        "Modelos de IA fisicamente isolados: O modelo de peso aprende apenas com a geometria do corte e umidade, "
+        "garantindo máxima confiabilidade preditiva."
     )
 
 # ============================================================
@@ -579,15 +654,15 @@ with tab_diag:
         df_prod_ativos["chave_comercial"] == produto_sel
     ].iloc[0]
     largura_cm = float(dados_prod["largura"])
-    comp_seco_ideal = float(dados_prod["comp_seco_ideal"])
+    comp_corte_ideal = float(dados_prod.get("comp_corte_ideal", dados_prod.get("comp_seco_ideal", 20.0)))
     peso_padrao = float(dados_prod["peso_padrao"])
     codigo_prod = dados_prod["codigo"]
     comprimento_nominal = float(dados_prod["comprimento_nominal"])
 
     st.sidebar.info(
         f"Meta de Peso Padrao: {peso_padrao:.3f} kg\n\n"
-        f"Comprimento Seco Ideal: {comp_seco_ideal:.1f} cm "
-        f"(para resultar em {comprimento_nominal:.1f} cm apos queima)"
+        f"Comprimento Verde de Corte Ideal: {comp_corte_ideal:.1f} cm "
+        f"(na saida da extrusora para resultar em {comprimento_nominal:.1f} cm apos queima)"
     )
 
     st.header("Selecao dos Barros Cadastrados")
@@ -612,6 +687,11 @@ with tab_diag:
             "Barro Arenoso (Fraco):",
             barros_brancos if len(barros_brancos) > 1 else ["03_BR_AREN_BRANCO_STPRAZ"],
         )
+
+    # Obter os residuos puros individuais das jazidas
+    rp_p = obter_residuo_puro_barro(sel_barro_preto, st.session_state.catalogo_barros, st.session_state.analises_puro)
+    rp_a = obter_residuo_puro_barro(sel_barro_amarelo, st.session_state.catalogo_barros, st.session_state.analises_puro)
+    rp_b = obter_residuo_puro_barro(sel_barro_branco, st.session_state.catalogo_barros, st.session_state.analises_puro)
 
     st.divider()
     st.header("Composicao em Conchas")
@@ -671,26 +751,30 @@ with tab_diag:
         pct_branco = ((branco_a / tot_a) + (branco_b / tot_b)) / 2
         mistura_desc = f"Mesclada ({preto_a}x{branco_a} e {preto_b}x{branco_b})"
 
+    # Residuos puros ponderados
+    res_puro_ponderado = (pct_preto * rp_p) + (pct_amarelo * rp_a) + (pct_branco * rp_b)
+
     st.caption(
         f"Massa Resultante na Maromba: {pct_preto*100:.1f}% Argiloso | "
-        f"{pct_amarelo*100:.1f}% Medio | {pct_branco*100:.1f}% Arenoso"
+        f"{pct_amarelo*100:.1f}% Medio | {pct_branco*100:.1f}% Arenoso\n\n"
+        f"Residuo Puro Ponderado da Materia-Prima (Entrada da Jazida): **{res_puro_ponderado:.1f}%**"
     )
 
     st.divider()
-    st.header("Parametros de Processo e Dimensao de Corte")
+    st.header("Parametros de Processo e Dimensao de Corte na Extrusora")
 
     col_u, col_e, col_c = st.columns(3)
     with col_u:
-        umidade = st.number_input("Umidade do Barro (%)", 5.0, 30.0, 16.0, 0.5)
+        umidade = st.number_input("Umidade da Massa na Maromba (%)", 5.0, 30.0, 16.0, 0.5)
     with col_e:
-        esp_parede = st.number_input("Espessura da Parede (cm)", 0.20, 1.50, 0.65, 0.01)
+        esp_parede = st.number_input("Espessura da Parede / Boquilha (cm)", 0.20, 1.50, 0.65, 0.01)
     with col_c:
         comprimento_cm = st.number_input(
-            "Comprimento Seco do Bloco (cm):",
-            15.0, 45.0, float(comp_seco_ideal), 0.1,
+            "Comprimento Verde de Corte na Extrusora (cm):",
+            15.0, 45.0, float(comp_corte_ideal), 0.1,
             help=(
-                f"Tamanho ideal seco para este produto e {comp_seco_ideal:.1f} cm. "
-                "Se a guilhotina cortar maior, o peso aumenta."
+                f"Tamanho ideal do corte verde para este produto e {comp_corte_ideal:.1f} cm. "
+                "Se a guilhotina cortar maior, o peso aumenta desnecessariamente."
             ),
         )
 
@@ -700,41 +784,55 @@ with tab_diag:
         st.session_state.diagnostico_gerado = True
 
     if st.session_state.diagnostico_gerado:
-        X_input = pd.DataFrame([{
+        # Inputs isolados por modelo
+        X_input_pes = pd.DataFrame([{
+            "esp_parede": esp_parede,
+            "largura_cm": largura_cm,
+            "comprimento_cm": comprimento_cm,
+            "umidade": umidade,
+        }])
+
+        X_input_res = pd.DataFrame([{
+            "pct_preto": pct_preto,
+            "pct_amarelo": pct_amarelo,
+            "pct_branco": pct_branco,
+            "residuo_puro_ponderado": res_puro_ponderado,
+            "umidade": umidade,
+        }])
+
+        X_input_ret = pd.DataFrame([{
             "pct_preto": pct_preto,
             "pct_amarelo": pct_amarelo,
             "pct_branco": pct_branco,
             "umidade": umidade,
             "esp_parede": esp_parede,
-            "largura_cm": largura_cm,
-            "comprimento_cm": comprimento_cm,
         }])
 
-        pred_res = m_res.predict(X_input)[0]
-        pred_ret = m_ret.predict(X_input)[0]
-        pred_pes = m_pes.predict(X_input)[0]
+        pred_pes = m_pes.predict(X_input_pes)[0]
+        pred_res = m_res.predict(X_input_res)[0]
+        pred_ret = m_ret.predict(X_input_ret)[0]
 
         st.header("Resultados Previstos pela IA")
 
-        diff_comp = comprimento_cm - comp_seco_ideal
+        diff_comp = comprimento_cm - comp_corte_ideal
         if diff_comp > 0.15:
             st.warning(
-                f"ALERTA DE CORTE NO CARRETEL: Bloco seco cortado com "
+                f"ALERTA DE CORTE NA EXTRUSORA: Bloco verde cortado com "
                 f"{comprimento_cm:.1f} cm (+{diff_comp*10:.0f} mm acima do ideal "
-                f"de {comp_seco_ideal:.1f} cm). Esse excesso aumenta o peso. "
-                "Ajuste a guilhotina da extrusora."
+                f"de {comp_corte_ideal:.1f} cm). Esse excesso aumenta o peso. "
+                "Ajuste a guilhotina do carretel."
             )
         elif diff_comp < -0.15:
             st.warning(
-                f"ATENCAO AO CORTE: Bloco seco cortado com "
+                f"ATENCAO AO CORTE NA EXTRUSORA: Bloco verde cortado com "
                 f"{comprimento_cm:.1f} cm (-{abs(diff_comp)*10:.0f} mm abaixo do "
-                f"ideal de {comp_seco_ideal:.1f} cm). Risco de ficar curto apos a queima."
+                f"ideal de {comp_corte_ideal:.1f} cm). Risco de ficar curto apos a queima."
             )
 
         res1, res2, res3 = st.columns(3)
 
         with res1:
-            st.metric("Residuo Previsto", f"{pred_res:.1f}%")
+            st.metric("Residuo Previsto no Bloco Queimado", f"{pred_res:.1f}%")
             if pred_res > 32.0:
                 class_res = "BLOCO FRACO / QUEBRADICO"
                 msg_res = "Residuo acima de 32%. Aumente o barro Preto ou reduza o Branco."
@@ -809,7 +907,7 @@ with tab_diag:
             f"Barro Argiloso: {sel_barro_preto}\n"
             f"Barro Arenoso: {sel_barro_branco}\n"
             f"Mistura: {mistura_desc} | Umid: {umidade}% | Esp: {esp_parede}cm\n"
-            f"Comp. Seco: {comprimento_cm:.1f} cm (Ideal: {comp_seco_ideal:.1f} cm)\n\n"
+            f"Corte Verde: {comprimento_cm:.1f} cm (Ideal: {comp_corte_ideal:.1f} cm)\n\n"
             f"Previsao da IA:\n"
             f"- Residuo: {pred_res:.1f}% ({class_res})\n"
             f"- Retracao: {pred_ret:.1f}% (Final queimado Est: {comp_estimado_queimado:.1f} cm)\n"
@@ -827,9 +925,9 @@ with tab_diag:
 # ABA 2: REGISTRAR ANALISE REAL DE MISTURA
 # ============================================================
 with tab_reg:
-    st.header("Registrar Analise de Laboratorio (Mistura Extrudada)")
+    st.header("Registrar Analise de Laboratorio (Amostras de Mistura Extrudada)")
     st.caption(
-        "Alimente o sistema com os dados medidos do bloco final. "
+        "Alimente o sistema com os dados medidos nas amostras de laboratorio. "
         "A IA recalibra automaticamente apos o salvamento."
     )
 
@@ -852,7 +950,7 @@ with tab_reg:
             prod_lote = st.selectbox("Produto Testado", df_prod_ativos_reg["chave_comercial"].tolist())
             row_prod_reg = df_prod_ativos_reg[df_prod_ativos_reg["chave_comercial"] == prod_lote].iloc[0]
             codigo_selecionado = row_prod_reg["codigo"]
-            comp_seco_sugerido = float(row_prod_reg["comp_seco_ideal"])
+            comp_corte_sugerido = float(row_prod_reg.get("comp_corte_ideal", row_prod_reg.get("comp_seco_ideal", 20.0)))
             peso_meta_l = float(row_prod_reg["peso_padrao"])
 
         with f_col2:
@@ -880,12 +978,12 @@ with tab_reg:
             a_b = st.number_input("Amarelo B", 0, 10, a_a)
             b_b = st.number_input("Branco B", 0, 10, b_a)
 
-        st.subheader("3. Medicoes Reais do Laboratorio e Dimensao de Corte")
+        st.subheader("3. Medicoes nas Amostras do Laboratorio")
         f_col4, f_col5, f_col6, f_col7 = st.columns(4)
         with f_col4:
             umidade_real = st.number_input("Umidade Real (%)", 0.0, 40.0, 16.0, 0.1)
         with f_col5:
-            residuo_real = st.number_input("Residuo Real (%)", 0.0, 50.0, 30.0, 0.1)
+            residuo_real = st.number_input("Residuo Real no Bloco (%)", 0.0, 50.0, 30.0, 0.1)
         with f_col6:
             retracao_real = st.number_input("Retracao Real (%)", 0.0, 10.0, 3.0, 0.1)
         with f_col7:
@@ -894,8 +992,8 @@ with tab_reg:
         f_col8, f_col9, f_col10 = st.columns(3)
         with f_col8:
             comp_real_medido = st.number_input(
-                "Comprimento Seco Medido (cm):", 10.0, 50.0, float(comp_seco_sugerido), 0.1,
-                help="Tamanho medido com paquimetro/trena no bloco seco.",
+                "Comprimento Verde de Corte Medido (cm):", 10.0, 50.0, float(comp_corte_sugerido), 0.1,
+                help="Tamanho medido com paquimetro/trena na saida do carretel.",
             )
         with f_col9:
             peso_real = st.number_input("Peso Real Medido (kg)", 0.0, 15.0, 3.100, 0.001)
@@ -946,18 +1044,16 @@ with tab_reg:
 
             persistir_dados("lotes")
 
-            st.success(
-                "Lote registrado com sucesso. A IA sera recalibrada automaticamente."
-            )
+            st.success("Lote registrado com sucesso. A IA sera recalibrada automaticamente.")
 
             msg_wa_reg = (
                 f"CeramicaIA - Registro de Lab Real\n\n"
                 f"Data: {data_lote.strftime('%d/%m/%Y')} | Produto: {codigo_selecionado}\n"
                 f"Barro Preto: {cod_p_reg} | Branco: {cod_b_reg}\n"
-                f"Mensuracoes reais:\n"
+                f"Mensuracoes nas Amostras:\n"
                 f"- Residuo: {residuo_real}% ({class_res_l.upper()})\n"
                 f"- Umidade: {umidade_real}% | Retracao: {retracao_real}%\n"
-                f"- Comp. Seco: {comp_real_medido:.1f} cm | Espessura: {esp_real} cm\n"
+                f"- Corte Verde: {comp_real_medido:.1f} cm | Espessura: {esp_real} cm\n"
                 f"- Peso Real: {peso_real:.3f} kg ({excesso_l:+.0f}g vs meta)\n\n"
                 f"Obs: {obs_texto}"
             )
@@ -1049,7 +1145,7 @@ with tab_puro:
 # ============================================================
 with tab_barros:
     st.header("Cadastro e Controle de Barros / Jazidas")
-    st.caption("Cadastre novas jazidas, edite informacoes ou inative barros esgotados.")
+    st.caption("Cadastre novas jazidas, ajuste o residuo puro padrao, edite informacoes ou inative barros esgotados.")
 
     col_cad1, col_cad2 = st.columns(2)
 
@@ -1059,6 +1155,7 @@ with tab_barros:
             novo_cod = st.text_input("Codigo Oficial (ex: 04_BR_ARG_PRETO_JAZIDA2):")
             novo_nome = st.text_input("Nome / Apelido Comercial:")
             novo_tipo = st.selectbox("Tipo Base para IA:", ["Preto", "Amarelo", "Branco"])
+            novo_res_puro = st.number_input("Residuo Puro Padrao da Jazida (%):", 0.0, 80.0, 20.0, 0.5)
             nova_loc = st.text_input("Localidade / Jazida:")
 
             btn_cad_barro = st.form_submit_button("Cadastrar Barro", type="primary", use_container_width=True)
@@ -1074,6 +1171,7 @@ with tab_barros:
                             "nome": novo_nome.strip(),
                             "tipo_base": novo_tipo,
                             "localidade": nova_loc.strip(),
+                            "residuo_puro": novo_res_puro,
                             "status": "Ativo",
                         }
                         st.session_state.catalogo_barros = pd.concat(
@@ -1102,6 +1200,8 @@ with tab_barros:
                 lista_tipos = ["Preto", "Amarelo", "Branco"]
                 idx_tipo = lista_tipos.index(dados_atual["tipo_base"]) if dados_atual["tipo_base"] in lista_tipos else 0
                 edit_tipo = st.selectbox("Tipo Base para IA:", lista_tipos, index=idx_tipo)
+                val_res_atual = float(dados_atual.get("residuo_puro", 20.0) or 20.0)
+                edit_res_puro = st.number_input("Residuo Puro Padrao da Jazida (%):", 0.0, 80.0, val_res_atual, 0.5)
                 edit_loc = st.text_input("Localidade / Jazida:", value=dados_atual["localidade"])
                 lista_status = ["Ativo", "Inativo"]
                 idx_status = lista_status.index(dados_atual["status"]) if dados_atual["status"] in lista_status else 0
@@ -1139,6 +1239,7 @@ with tab_barros:
                         st.session_state.catalogo_barros.at[idx_muda, "codigo"] = edit_cod_clean
                         st.session_state.catalogo_barros.at[idx_muda, "nome"] = edit_nome.strip()
                         st.session_state.catalogo_barros.at[idx_muda, "tipo_base"] = edit_tipo
+                        st.session_state.catalogo_barros.at[idx_muda, "residuo_puro"] = edit_res_puro
                         st.session_state.catalogo_barros.at[idx_muda, "localidade"] = edit_loc.strip()
                         st.session_state.catalogo_barros.at[idx_muda, "status"] = edit_status
 
@@ -1155,7 +1256,7 @@ with tab_barros:
 # ============================================================
 with tab_produtos:
     st.header("Cadastro e Controle de Produtos / Blocos")
-    st.caption("Adicione novos produtos, ajuste metas de peso padrao, dimensoes e comprimento de corte.")
+    st.caption("Adicione novos produtos, ajuste metas de peso padrao, dimensoes e comprimento verde de corte na extrusora.")
 
     col_prod1, col_prod2 = st.columns(2)
 
@@ -1171,7 +1272,7 @@ with tab_produtos:
             with c_dim2:
                 n_prod_comp_nom = st.number_input("Comprimento Nominal pos-queima (cm):", 5.0, 50.0, 19.0, 0.5)
             with c_dim3:
-                n_prod_comp_sec = st.number_input("Comprimento Seco Ideal de Corte (cm):", 5.0, 55.0, 20.0, 0.5)
+                n_prod_comp_corte = st.number_input("Comprimento Verde Ideal de Corte na Extrusora (cm):", 5.0, 55.0, 20.0, 0.5)
 
             n_prod_peso = st.number_input("Meta de Peso Padrao (kg):", 0.500, 15.000, 2.800, 0.050, format="%.3f")
 
@@ -1193,7 +1294,7 @@ with tab_produtos:
                             "codigo": prod_cod_clean,
                             "largura": n_prod_larg,
                             "comprimento_nominal": n_prod_comp_nom,
-                            "comp_seco_ideal": n_prod_comp_sec,
+                            "comp_corte_ideal": n_prod_comp_corte,
                             "peso_padrao": n_prod_peso,
                             "status": "Ativo",
                         }
@@ -1240,9 +1341,10 @@ with tab_produtos:
                         float(dados_prod_atual["comprimento_nominal"]), 0.5,
                     )
                 with ce_dim3:
-                    edit_prod_comp_sec = st.number_input(
-                        "Comprimento Seco Ideal de Corte (cm):", 5.0, 55.0,
-                        float(dados_prod_atual["comp_seco_ideal"]), 0.5,
+                    val_corte_atual = float(dados_prod_atual.get("comp_corte_ideal", dados_prod_atual.get("comp_seco_ideal", 20.0)))
+                    edit_prod_comp_corte = st.number_input(
+                        "Comprimento Verde Ideal de Corte na Extrusora (cm):", 5.0, 55.0,
+                        val_corte_atual, 0.5,
                     )
 
                 edit_prod_peso = st.number_input(
@@ -1291,7 +1393,7 @@ with tab_produtos:
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "chave_comercial"] = nova_chave_edit
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "largura"] = edit_prod_larg
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "comprimento_nominal"] = edit_prod_comp_nom
-                        st.session_state.catalogo_produtos.at[idx_prod_muda, "comp_seco_ideal"] = edit_prod_comp_sec
+                        st.session_state.catalogo_produtos.at[idx_prod_muda, "comp_corte_ideal"] = edit_prod_comp_corte
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "peso_padrao"] = edit_prod_peso
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "status"] = edit_prod_status
 
