@@ -1,6 +1,6 @@
 # ============================================================
-# CERAMICAIA v13.0 — Modelos de IA Separados (Física) + 
-# Resíduo do Barro Puro + Comprimento Verde de Corte na Extrusora
+# CERAMICAIA v13.1 — Correcao do Calculo de Residuo Ponderado + 
+# Trava de Conchas 'Nenhum' + Modelos Fisicamente Isolados
 # ============================================================
 
 import io
@@ -133,7 +133,6 @@ def ler_dados_sheets(worksheet, colunas):
         dados = worksheet.get_all_records()
         if dados:
             df = pd.DataFrame(dados)
-            # Normalizacao de colunas legadas se existirem
             if "comp_seco_ideal" in df.columns and "comp_corte_ideal" not in df.columns:
                 df.rename(columns={"comp_seco_ideal": "comp_corte_ideal"}, inplace=True)
             for col in colunas:
@@ -469,46 +468,48 @@ def persistir_dados(tipo):
         marcar_dados_alterados()
 
 # ============================================================
-# FUNCAO DE LOOKUP DO RESIDUO DE BARRO PURO
+# FUNCAO DE LOOKUP ROBUSTA DO RESIDUO DE BARRO PURO
 # ============================================================
 def obter_residuo_puro_barro(cod_barro, df_barros, df_puro):
-    if not cod_barro or cod_barro == "Nenhum":
+    if not cod_barro or str(cod_barro).strip() == "" or str(cod_barro).strip().lower() == "nenhum":
         return 0.0
+
+    cod_clean = str(cod_barro).strip()
 
     # 1. Busca teste recente na aba analises_puro
     if len(df_puro) > 0:
-        df_filtro = df_puro[df_puro["codigo_barro"] == cod_barro]
+        df_filtro = df_puro[df_puro["codigo_barro"].astype(str).str.strip() == cod_clean]
         if len(df_filtro) > 0:
             val_puro = pd.to_numeric(df_filtro.iloc[-1]["pct_residuo_puro"], errors="coerce")
-            if not pd.isna(val_puro):
+            if not pd.isna(val_puro) and float(val_puro) > 0:
                 return float(val_puro)
 
     # 2. Busca no cadastro padrao
     if len(df_barros) > 0:
-        df_filtro_b = df_barros[df_barros["codigo"] == cod_barro]
+        df_filtro_b = df_barros[df_barros["codigo"].astype(str).str.strip() == cod_clean]
         if len(df_filtro_b) > 0:
             val_cad = pd.to_numeric(df_filtro_b.iloc[0].get("residuo_puro", 0.0), errors="coerce")
-            if not pd.isna(val_cad) and val_cad > 0:
+            if not pd.isna(val_cad) and float(val_cad) > 0:
                 return float(val_cad)
 
-            # Fallback por tipo
-            tipo = df_filtro_b.iloc[0].get("tipo_base", "")
+            # Fallback por tipo se residuo_puro estiver em branco no cadastro
+            tipo = str(df_filtro_b.iloc[0].get("tipo_base", "")).strip().capitalize()
             if tipo == "Preto": return 10.0
             if tipo == "Amarelo": return 25.0
             if tipo == "Branco": return 45.0
+
+    # Fallback geral por padrao de codigo
+    if "preto" in cod_clean.lower() or "sv" in cod_clean.lower(): return 10.0
+    if "amarelo" in cod_clean.lower(): return 25.0
+    if "branco" in cod_clean.lower() or "stpraz" in cod_clean.lower(): return 45.0
 
     return 20.0
 
 # ============================================================
 # IA AUTO-APRENDIZ: MODELOS FISICAMENTE ISOLADOS
 # ============================================================
-# Modelo 1: PESO (Apenas Geometria do corte Verde + Umidade)
 FEATURES_PESO = ["esp_parede", "largura_cm", "comprimento_cm", "umidade"]
-
-# Modelo 2: RESIDUO (Composicao do barro + Residuo Puro da Jazida + Umidade)
 FEATURES_RESIDUO = ["pct_preto", "pct_amarelo", "pct_branco", "residuo_puro_ponderado", "umidade"]
-
-# Modelo 3: RETRACAO (Composicao do barro + Umidade + Espessura)
 FEATURES_RETRACAO = ["pct_preto", "pct_amarelo", "pct_branco", "umidade", "esp_parede"]
 
 def montar_dataset_treino(df_lotes, df_produtos, df_barros, df_puro):
@@ -517,17 +518,14 @@ def montar_dataset_treino(df_lotes, df_produtos, df_barros, df_puro):
 
     df = df_lotes.copy()
 
-    # Mapear largura a partir dos produtos
     mapa_largura = dict(zip(df_produtos["codigo"], df_produtos["largura"]))
     df["largura_cm"] = df["tipo_bloco"].map(mapa_largura)
     df["comprimento_cm"] = pd.to_numeric(df["comprimento"], errors="coerce")
 
-    # Converter numericos
     for col in ["pct_preto", "pct_amarelo", "pct_branco", "umidade",
                 "esp_parede", "residuo", "retracao", "peso"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Calcular Residuo Puro Ponderado para o historico (Backfill)
     res_puro_lista = []
     for idx, row in df.iterrows():
         rp_preto = obter_residuo_puro_barro(row.get("cod_barro_preto"), df_barros, df_puro)
@@ -553,21 +551,18 @@ def treinar_modelos_ia(df_lotes, df_produtos, df_barros, df_puro):
             "n": n, "r2_peso": None, "r2_residuo": None, "r2_retracao": None
         }
 
-    # Treino do Modelo 1: PESO
     df_pes = df.dropna(subset=FEATURES_PESO + ["peso"])
     X_pes = df_pes[FEATURES_PESO].astype(float)
     m_pes = GradientBoostingRegressor(random_state=42)
     m_pes.fit(X_pes, df_pes["peso"].astype(float))
     r2_pes = r2_score(df_pes["peso"], m_pes.predict(X_pes))
 
-    # Treino do Modelo 2: RESIDUO
     df_res = df.dropna(subset=FEATURES_RESIDUO + ["residuo"])
     X_res = df_res[FEATURES_RESIDUO].astype(float)
     m_res = GradientBoostingRegressor(random_state=42)
     m_res.fit(X_res, df_res["residuo"].astype(float))
     r2_res = r2_score(df_res["residuo"], m_res.predict(X_res))
 
-    # Treino do Modelo 3: RETRACAO
     df_ret = df.dropna(subset=FEATURES_RETRACAO + ["retracao"])
     X_ret = df_ret[FEATURES_RETRACAO].astype(float)
     m_ret = GradientBoostingRegressor(random_state=42)
@@ -615,10 +610,6 @@ with st.sidebar.expander("Detalhes do treinamento da IA"):
     st.write(f"R2 Peso (Fisico/Geom.): {metricas_ia['r2_peso']}")
     st.write(f"R2 Residuo (Barro Puro): {metricas_ia['r2_residuo']}")
     st.write(f"R2 Retracao (Plasticidade): {metricas_ia['r2_retracao']}")
-    st.caption(
-        "Modelos de IA fisicamente isolados: O modelo de peso aprende apenas com a geometria do corte e umidade, "
-        "garantindo máxima confiabilidade preditiva."
-    )
 
 # ============================================================
 # ABAS PRINCIPAIS
@@ -672,7 +663,10 @@ with tab_diag:
 
     barros_pretos = df_barros_ativos[df_barros_ativos["tipo_base"] == "Preto"]["codigo"].tolist()
     barros_amarelos = ["Nenhum"] + df_barros_ativos[df_barros_ativos["tipo_base"] == "Amarelo"]["codigo"].tolist()
-    barros_brancos = ["Nenhum"] + df_barros_ativos[df_barros_ativos["tipo_base"] == "Branco"]["codigo"].tolist()
+    
+    # Busca inteligente de barros brancos para nao padronizar em 'Nenhum'
+    brancos_lista = df_barros_ativos[df_barros_ativos["tipo_base"] == "Branco"]["codigo"].tolist()
+    barros_brancos = brancos_lista + ["Nenhum"] if brancos_lista else ["03_BR_AREN_BRANCO_STPRAZ", "Nenhum"]
 
     col_b1, col_b2, col_b3 = st.columns(3)
     with col_b1:
@@ -683,15 +677,7 @@ with tab_diag:
     with col_b2:
         sel_barro_amarelo = st.selectbox("Barro Intermediario (Medio):", barros_amarelos)
     with col_b3:
-        sel_barro_branco = st.selectbox(
-            "Barro Arenoso (Fraco):",
-            barros_brancos if len(barros_brancos) > 1 else ["03_BR_AREN_BRANCO_STPRAZ"],
-        )
-
-    # Obter os residuos puros individuais das jazidas
-    rp_p = obter_residuo_puro_barro(sel_barro_preto, st.session_state.catalogo_barros, st.session_state.analises_puro)
-    rp_a = obter_residuo_puro_barro(sel_barro_amarelo, st.session_state.catalogo_barros, st.session_state.analises_puro)
-    rp_b = obter_residuo_puro_barro(sel_barro_branco, st.session_state.catalogo_barros, st.session_state.analises_puro)
+        sel_barro_branco = st.selectbox("Barro Arenoso (Fraco):", barros_brancos)
 
     st.divider()
     st.header("Composicao em Conchas")
@@ -712,17 +698,19 @@ with tab_diag:
             )
         with c3:
             branco_a = st.number_input(
-                "Conchas de Branco", 0, 10, 1 if sel_barro_branco != "Nenhum" else 0, 1
+                "Conchas de Branco", 0, 10, 0 if sel_barro_branco == "Nenhum" else 1, 1
             )
+
+        # TRAVA DE SEGURANCA: Zerar conchas de barro "Nenhum"
+        if sel_barro_amarelo == "Nenhum": amarelo_a = 0
+        if sel_barro_branco == "Nenhum": branco_a = 0
 
         preto_b, amarelo_b, branco_b = preto_a, amarelo_a, branco_a
         tot_a = max(1, preto_a + amarelo_a + branco_a)
         pct_preto = preto_a / tot_a
         pct_amarelo = amarelo_a / tot_a
         pct_branco = branco_a / tot_a
-        mistura_desc = (
-            f"{preto_a}x{amarelo_a}x{branco_a}" if amarelo_a > 0 else f"{preto_a}x{branco_a}"
-        )
+        mistura_desc = f"{preto_a}x{amarelo_a}x{branco_a}" if amarelo_a > 0 else f"{preto_a}x{branco_a}"
 
     else:
         st.subheader("Receita A")
@@ -743,6 +731,10 @@ with tab_diag:
         with c6:
             branco_b = st.number_input("Branco (B)", 0, 10, 2, 1)
 
+        # TRAVA DE SEGURANCA: Zerar conchas de barro "Nenhum"
+        if sel_barro_amarelo == "Nenhum": amarelo_a = amarelo_b = 0
+        if sel_barro_branco == "Nenhum": branco_a = branco_b = 0
+
         tot_a = max(1, preto_a + amarelo_a + branco_a)
         tot_b = max(1, preto_b + amarelo_b + branco_b)
 
@@ -751,7 +743,12 @@ with tab_diag:
         pct_branco = ((branco_a / tot_a) + (branco_b / tot_b)) / 2
         mistura_desc = f"Mesclada ({preto_a}x{branco_a} e {preto_b}x{branco_b})"
 
-    # Residuos puros ponderados
+    # Obter os residuos puros individuais das jazidas
+    rp_p = obter_residuo_puro_barro(sel_barro_preto, st.session_state.catalogo_barros, st.session_state.analises_puro)
+    rp_a = obter_residuo_puro_barro(sel_barro_amarelo, st.session_state.catalogo_barros, st.session_state.analises_puro)
+    rp_b = obter_residuo_puro_barro(sel_barro_branco, st.session_state.catalogo_barros, st.session_state.analises_puro)
+
+    # Residuos puros ponderados de entrada
     res_puro_ponderado = (pct_preto * rp_p) + (pct_amarelo * rp_a) + (pct_branco * rp_b)
 
     st.caption(
@@ -784,7 +781,6 @@ with tab_diag:
         st.session_state.diagnostico_gerado = True
 
     if st.session_state.diagnostico_gerado:
-        # Inputs isolados por modelo
         X_input_pes = pd.DataFrame([{
             "esp_parede": esp_parede,
             "largura_cm": largura_cm,
@@ -936,7 +932,9 @@ with tab_reg:
     ]
     barros_pretos_reg = df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Preto"]["codigo"].tolist()
     barros_amarelos_reg = ["Nenhum"] + df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Amarelo"]["codigo"].tolist()
-    barros_brancos_reg = ["Nenhum"] + df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Branco"]["codigo"].tolist()
+    
+    brancos_reg_lista = df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Branco"]["codigo"].tolist()
+    barros_brancos_reg = brancos_reg_lista + ["Nenhum"] if brancos_reg_lista else ["03_BR_AREN_BRANCO_STPRAZ", "Nenhum"]
 
     df_prod_ativos_reg = st.session_state.catalogo_produtos[
         st.session_state.catalogo_produtos["status"] == "Ativo"
@@ -958,10 +956,7 @@ with tab_reg:
                 "Codigo Barro Preto:", barros_pretos_reg if barros_pretos_reg else ["01_BR_ARG_PRETO_SV"]
             )
             cod_a_reg = st.selectbox("Codigo Barro Amarelo:", barros_amarelos_reg)
-            cod_b_reg = st.selectbox(
-                "Codigo Barro Branco:",
-                barros_brancos_reg if len(barros_brancos_reg) > 1 else ["03_BR_AREN_BRANCO_STPRAZ"],
-            )
+            cod_b_reg = st.selectbox("Codigo Barro Branco:", barros_brancos_reg)
         with f_col3:
             modo_lote = st.selectbox("Tipo de Producao", ["Unica", "Mesclada"])
 
@@ -1005,6 +1000,9 @@ with tab_reg:
         )
 
         if btn_salvar:
+            if cod_a_reg == "Nenhum": a_a = a_b = 0
+            if cod_b_reg == "Nenhum": b_a = b_b = 0
+
             tot_a_l = max(1, p_a + a_a + b_a)
             tot_b_l = max(1, p_b + a_b + b_b)
             pct_p_l = ((p_a / tot_a_l) + (p_b / tot_b_l)) / 2
