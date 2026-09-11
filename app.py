@@ -1,17 +1,17 @@
 # ============================================================
-# CERAMICAIA v11.0 — SaaS com Google Sheets, Logo e UI Limpa
+# CERAMICAIA v12.1 — Auto-Seed do Google Sheets + IA Auto-Aprendiz
 # ============================================================
 
 import io
 import os
 import urllib.parse
 from datetime import datetime
-import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.metrics import r2_score
 
-# Importação de bibliotecas do Google Sheets
 try:
     import gspread
     from google.oauth2.service_account import Credentials
@@ -23,14 +23,11 @@ except ImportError:
 # CONFIGURACAO DA PAGINA
 # ============================================================
 st.set_page_config(
-    page_title="CeramicaIA — Gestao de Barros e Misturas",
+    page_title="CeramicaIA - Gestao de Barros e Misturas",
     page_icon="logo.png" if os.path.exists("logo.png") else None,
     layout="wide",
 )
 
-# ============================================================
-# ESTILIZACAO CSS (SEM EMOJIS, VISUAL CORPORATIVO)
-# ============================================================
 st.markdown(
     """
     <style>
@@ -59,20 +56,24 @@ st.markdown(
         border-radius: 6px;
         font-size: 13px;
     }
+    .status-erro {
+        background-color: #f8d7da;
+        color: #721c24;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+    }
     </style>
 """,
     unsafe_allow_html=True,
 )
 
-# ============================================================
-# LOGO E CABECALHO
-# ============================================================
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
     st.sidebar.markdown("---")
 
 st.markdown(
-    '<div class="main-header">CeramicaIA — Otimizador de Misturas e Rastreabilidade</div>',
+    '<div class="main-header">CeramicaIA - Otimizador de Misturas e Rastreabilidade</div>',
     unsafe_allow_html=True,
 )
 st.markdown(
@@ -126,9 +127,6 @@ if MODO_SHEETS:
         unsafe_allow_html=True,
     )
 
-# ============================================================
-# FUNCOES DE SINCRONIZACAO COM SHEETS
-# ============================================================
 def ler_dados_sheets(worksheet, colunas):
     try:
         dados = worksheet.get_all_records()
@@ -148,7 +146,7 @@ def salvar_no_sheets(worksheet, df):
         st.error(f"Erro ao sincronizar com Google Sheets: {e}")
 
 # ============================================================
-# DADOS INICIAIS (SEED)
+# DADOS INICIAIS BASE (115 LOTES HISTORICOS REAIS)
 # ============================================================
 BARROS_INICIAIS = [
     {
@@ -176,7 +174,7 @@ BARROS_INICIAIS = [
 
 PRODUTOS_INICIAIS = [
     {
-        "chave_comercial": "01-BLP (9x19x19 cm) — Vedacao Padrao",
+        "chave_comercial": "01-BLP (9x19x19 cm) - Vedacao Padrao",
         "codigo": "01-BLP",
         "largura": 9.0,
         "comprimento_nominal": 19.0,
@@ -185,7 +183,7 @@ PRODUTOS_INICIAIS = [
         "status": "Ativo",
     },
     {
-        "chave_comercial": "BP14 (14x19x19 cm) — Estrutural Curto",
+        "chave_comercial": "BP14 (14x19x19 cm) - Estrutural Curto",
         "codigo": "BP14",
         "largura": 14.0,
         "comprimento_nominal": 19.0,
@@ -194,7 +192,7 @@ PRODUTOS_INICIAIS = [
         "status": "Ativo",
     },
     {
-        "chave_comercial": "02-BLG (9x19x39 cm) — Bloco Grande / Canaleta 9",
+        "chave_comercial": "02-BLG (9x19x39 cm) - Bloco Grande / Canaleta 9",
         "codigo": "02-BLG",
         "largura": 9.0,
         "comprimento_nominal": 39.0,
@@ -203,7 +201,7 @@ PRODUTOS_INICIAIS = [
         "status": "Ativo",
     },
     {
-        "chave_comercial": "BG14 (14x19x39 cm) — Estrutural Grande 14",
+        "chave_comercial": "BG14 (14x19x39 cm) - Estrutural Grande 14",
         "codigo": "BG14",
         "largura": 14.0,
         "comprimento_nominal": 39.0,
@@ -214,29 +212,164 @@ PRODUTOS_INICIAIS = [
 ]
 
 HISTORICO_BASE_CSV = """data,modo,cod_barro_preto,cod_barro_amarelo,cod_barro_branco,preto_a,amarelo_a,branco_a,preto_b,amarelo_b,branco_b,pct_preto,pct_amarelo,pct_branco,umidade,residuo,retracao,esp_parede,peso,comprimento,tipo_bloco,class_residuo,excesso_peso,observacoes
-2025-03-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,33.7,3,0.90,3.600,20.4,01-BLP,fraco,800,Historico inicial
-2025-03-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,32.0,3,0.85,3.185,20.5,01-BLP,limite,385,Historico inicial
-2025-03-24,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,10.0,28.0,3,0.82,3.100,20.7,01-BLP,ideal,300,Historico inicial
-2025-03-25,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,15.0,29.0,3,0.80,3.125,20.5,01-BLP,ideal,325,Historico inicial
-2025-03-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,16.0,31.5,3,0.85,3.184,20.5,01-BLP,ideal,384,Historico inicial
-2025-08-18,Unica,02_BR_ARG_VERM_STPREZ,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,32.0,4,0.675,3.020,20.1,01-BLP,limite,220,Historico Clessinho / Prazeres
-2026-09-02,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,17.0,30.0,3,0.68,2.935,20.3,01-BLP,ideal,135,Historico recente 3 barros"""
+2025-03-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,33.7,3,0.90,3.600,20.4,01-BLP,fraco,800,Historico Colab
+2025-03-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,32.0,3,0.85,3.185,20.5,01-BLP,limite,385,Historico Colab
+2025-03-24,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,10.0,28.0,3,0.82,3.100,20.7,01-BLP,ideal,300,Historico Colab
+2025-03-25,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,15.0,29.0,3,0.80,3.125,20.5,01-BLP,ideal,325,Historico Colab
+2025-03-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,16.0,31.5,3,0.85,3.184,20.5,01-BLP,ideal,384,Historico Colab
+2025-03-28,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,16.0,28.7,3,0.77,3.074,20.0,01-BLP,ideal,274,Historico Colab
+2025-04-02,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,29.2,4,0.80,3.244,20.7,01-BLP,ideal,444,Historico Colab
+2025-04-03,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,16.0,30.0,3,0.87,3.114,20.2,01-BLP,ideal,314,Historico Colab
+2025-04-09,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,15.0,30.9,4,0.82,3.231,20.0,01-BLP,ideal,431,Historico Colab
+2025-04-10,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,33.5,4,0.90,3.237,20.0,01-BLP,fraco,437,Historico Colab
+2025-04-16,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,13.0,28.6,4,0.77,3.277,20.5,01-BLP,ideal,477,Historico Colab
+2025-04-18,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,16.0,28.4,3,0.85,3.390,20.6,01-BLP,ideal,590,Historico Colab
+2025-04-30,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,12.0,28.4,3,0.95,3.390,20.6,01-BLP,ideal,590,Historico Colab
+2025-05-14,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,12.0,32.0,3,0.80,3.419,20.2,01-BLP,limite,619,Historico Colab
+2025-05-15,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,11.0,32.6,3,0.725,2.885,20.0,01-BLP,fraco,85,Historico Colab
+2025-05-16,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,13.0,33.3,3,0.80,2.930,20.0,01-BLP,fraco,130,Historico Colab
+2025-05-22,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,10.0,33.3,3,0.80,3.050,20.0,01-BLP,fraco,250,Historico Colab
+2025-05-26,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,16.0,34.0,2,0.725,3.071,20.6,01-BLP,fraco,271,Historico Colab
+2025-05-28,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,12.0,34.5,3,0.775,3.055,20.0,01-BLP,fraco,255,Historico Colab
+2025-05-30,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,12.0,32.7,4,0.975,3.025,20.0,01-BLP,fraco,225,Historico Colab
+2025-06-05,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,12.0,32.0,4,0.56,3.184,20.0,01-BLP,limite,384,Historico Colab
+2025-06-10,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,14.0,30.9,4,0.725,3.175,20.5,01-BLP,ideal,375,Historico Colab
+2025-06-17,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,13.0,33.0,3,0.725,3.315,20.5,01-BLP,fraco,515,Historico Colab
+2025-06-25,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,13.0,30.2,3,0.775,3.284,20.5,01-BLP,ideal,484,Historico Colab
+2025-07-04,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,12.0,28.1,4,0.725,3.284,20.5,01-BLP,ideal,484,Historico Colab
+2025-07-07,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,12.0,31.5,3,0.775,3.400,20.7,01-BLP,ideal,600,Historico Colab
+2025-07-09,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,12.0,29.6,5,0.70,3.100,20.5,01-BLP,ideal,300,Historico Colab
+2025-07-10,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,31.0,4,0.725,3.084,20.2,01-BLP,ideal,284,Historico Colab
+2025-07-14,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,15.0,30.0,4,0.675,3.090,20.0,01-BLP,ideal,290,Historico Colab
+2025-07-28,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,15.0,36.6,4,0.725,3.227,20.3,01-BLP,fraco,427,Historico Colab
+2025-08-05,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,15.0,36.0,4,0.80,3.241,20.3,01-BLP,fraco,441,Historico Colab
+2025-08-11,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,29.5,4,0.725,3.300,20.3,01-BLP,ideal,500,Historico Colab
+2025-08-18,Unica,02_BR_ARG_VERM_STPREZ,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,14.0,32.0,4,0.675,3.020,20.1,01-BLP,limite,220,Historico Colab
+2025-08-19,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,11.0,31.0,3,0.675,3.000,20.0,01-BLP,ideal,200,Historico Colab
+2025-08-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,13.0,34.0,3,0.65,3.048,20.3,01-BLP,fraco,248,Historico Colab
+2025-09-02,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,4,0,1,0.817,0.000,0.183,15.0,31.5,4,0.575,3.097,20.1,01-BLP,ideal,297,Historico Colab
+2025-09-16,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,4,0,1,0.817,0.000,0.183,18.0,29.0,4,0.625,3.338,20.1,01-BLP,ideal,538,Historico Colab
+2025-09-23,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,4,0,1,0.817,0.000,0.183,16.0,28.5,4,0.725,3.149,20.3,01-BLP,ideal,349,Historico Colab
+2025-09-25,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,4,0,1,0.817,0.000,0.183,15.0,28.0,3,0.825,3.400,20.1,01-BLP,ideal,600,Historico Colab
+2025-09-30,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,4,0,1,0.817,0.000,0.183,17.0,28.0,4,0.75,3.291,20.1,01-BLP,ideal,491,Historico Colab
+2025-10-05,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,4,0,1,0.817,0.000,0.183,17.0,28.0,4,0.75,6.000,40.0,03-BLQ,ideal,0,Historico Colab
+2025-10-15,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,4,0,1,0.817,0.000,0.183,17.0,28.0,4,0.75,6.300,40.0,02-BLG,ideal,800,Historico Colab
+2025-12-24,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,18.0,28.0,3,0.60,3.016,21.0,01-BLP,ideal,216,Historico Colab
+2025-12-26,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,18.0,30.0,3,0.60,2.891,20.0,01-BLP,ideal,91,Historico Colab
+2025-12-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,18.0,35.0,3,0.60,6.089,41.0,02-BLG,fraco,589,Historico Colab
+2025-12-29,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,18.0,34.0,3,0.60,6.102,41.0,02-BLG,fraco,602,Historico Colab
+2025-12-30,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,17.0,42.0,3,0.60,3.132,21.0,01-BLP,fraco,332,Historico Colab
+2026-01-02,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,2,4,0,2,0.667,0.000,0.333,18.0,32.0,3,0.60,3.116,20.0,01-BLP,limite,316,Historico Colab
+2026-01-12,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,2,4,0,2,0.667,0.000,0.333,16.0,38.0,3,0.60,6.360,41.0,02-BLG,fraco,860,Historico Colab
+2026-01-13,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,2,4,0,2,0.667,0.000,0.333,17.0,26.0,3,0.60,6.303,41.0,02-BLG,forte,803,Historico Colab
+2026-01-14,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,2,4,0,2,0.667,0.000,0.333,17.0,36.0,3,0.60,3.175,21.0,01-BLP,fraco,375,Historico Colab
+2026-01-15,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,2,4,0,2,0.667,0.000,0.333,18.0,35.0,3,0.60,3.077,20.0,01-BLP,fraco,277,Historico Colab
+2026-01-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,6,0,3,6,0,3,0.667,0.000,0.333,12.0,32.0,3,0.70,2.605,40.0,02-BLG,limite,-2895,Historico Colab
+2026-01-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,6,0,3,6,0,3,0.667,0.000,0.333,17.0,37.0,3,0.60,3.170,21.0,01-BLP,fraco,370,Historico Colab
+2026-01-23,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,13.0,30.0,3,0.60,3.071,20.0,01-BLP,ideal,271,Historico Colab
+2026-01-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,13.0,27.0,3,0.60,3.134,20.0,01-BLP,forte,334,Historico Colab
+2026-01-28,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,13.0,30.0,3,0.60,6.357,41.0,02-BLG,ideal,857,Historico Colab
+2026-02-06,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,2,0.675,0.000,0.325,12.0,26.0,3,0.60,6.450,41.0,02-BLG,forte,950,Historico Colab
+2026-02-10,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,12.0,30.0,3,0.60,6.401,41.0,02-BLG,ideal,901,Historico Colab
+2026-02-11,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,12.0,29.0,3,0.60,6.705,41.0,02-BLG,ideal,1205,Historico Colab
+2026-02-18,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,12.0,28.0,3,0.60,6.571,41.0,02-BLG,ideal,1071,Historico Colab
+2026-02-19,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,3,3,0,3,0.500,0.000,0.500,12.0,30.0,3,0.60,6.498,41.0,02-BLG,ideal,998,Historico Colab
+2026-02-19,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,3,3,0,3,0.500,0.000,0.500,11.0,37.0,3,0.60,6.596,41.0,02-BLG,fraco,1096,Historico Colab
+2026-02-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,3,3,0,3,0.500,0.000,0.500,12.0,32.0,3,0.60,3.121,19.0,01-BLP,limite,321,Historico Colab
+2026-02-23,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,3,3,0,3,0.500,0.000,0.500,14.0,30.0,3,0.60,3.268,20.0,01-BLP,ideal,468,Historico Colab
+2026-03-04,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,12.0,33.0,3,0.60,6.380,41.0,02-BLG,fraco,880,Historico Colab
+2026-03-07,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,12.0,33.0,3,0.60,3.279,20.0,01-BLP,fraco,479,Historico Colab
+2026-03-09,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,13.0,33.0,3,0.60,6.317,40.0,02-BLG,fraco,817,Historico Colab
+2026-03-23,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,11.0,37.0,3,0.60,3.335,20.0,01-BLP,fraco,535,Historico Colab
+2026-03-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,14.0,30.0,3,0.60,3.386,20.0,01-BLP,ideal,586,Historico Colab
+2026-04-01,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,12.0,37.0,3,0.60,6.593,41.0,02-BLG,fraco,1093,Historico Colab
+2026-04-07,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,2,3,0,2,0.600,0.000,0.400,10.0,36.0,3,0.60,3.362,20.0,01-BLP,fraco,562,Historico Colab
+2026-04-15,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,2,0.675,0.000,0.325,12.0,33.0,3,0.60,6.580,40.0,02-BLG,fraco,1080,Historico Colab
+2026-04-22,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,12.0,37.0,3,0.60,3.394,20.0,01-BLP,fraco,594,Historico Colab
+2026-04-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,12.0,28.0,3,0.60,3.311,20.0,01-BLP,ideal,511,Historico Colab
+2026-04-29,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,4,0,1,0.775,0.000,0.225,12.0,37.0,3,0.60,6.878,40.0,02-BLG,fraco,1378,Historico Colab
+2026-05-05,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,4,0,1,0.775,0.000,0.225,12.0,33.0,3,0.60,3.541,20.0,01-BLP,fraco,741,Historico Colab
+2026-05-07,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,12.0,32.0,3,0.60,3.475,20.0,01-BLP,limite,675,Historico Colab
+2026-05-13,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,12.0,32.0,3,0.60,3.530,20.0,01-BLP,limite,730,Historico Colab
+2026-05-18,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,12.0,31.0,3,0.60,8.200,41.0,BG14,ideal,1200,Historico Colab
+2026-05-19,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,15.0,31.0,3,0.60,3.570,20.0,01-BLP,ideal,770,Historico Colab
+2026-05-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,20.0,32.0,3,0.60,3.618,20.0,01-BLP,limite,818,Historico Colab
+2026-05-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,12.0,28.0,3,0.60,3.540,41.0,02-BLG,ideal,-1960,Historico Colab
+2026-06-13,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,12.0,27.5,2,0.60,6.700,41.0,02-BLG,forte,1200,Historico Colab
+2026-06-15,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,20.0,30.3,3,0.23,3.633,20.0,01-BLP,ideal,833,Historico Colab
+2026-06-16,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,12.0,29.5,4,0.23,3.670,20.5,01-BLP,ideal,870,Historico Colab
+2026-06-17,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,17.0,31.6,3,0.75,7.000,41.0,BG14,ideal,0,Historico Colab
+2026-06-18,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,18.0,30.8,3,0.75,3.300,20.3,01-BLP,ideal,500,Historico Colab
+2026-06-19,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,15.7,31.6,3,0.86,6.700,19.1,BP14,ideal,2900,Historico Colab
+2026-06-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,20.0,31.8,3,0.76,3.576,19.8,01-BLP,ideal,776,Historico Colab
+2026-06-22,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,15.9,28.2,3,0.80,3.570,20.1,01-BLP,ideal,770,Historico Colab
+2026-06-23,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,28.5,3,0.88,3.500,20.2,01-BLP,ideal,700,Historico Colab
+2026-06-24,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,2,0.733,0.000,0.267,15.0,27.6,4,0.83,3.570,20.4,01-BLP,forte,770,Historico Colab
+2026-06-25,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,5,0,2,0.757,0.000,0.243,18.0,29.0,3,0.75,3.500,20.0,01-BLP,ideal,700,Historico Colab
+2026-06-26,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,18.5,32.7,3,0.83,3.715,20.5,01-BLP,fraco,915,Historico Colab
+2026-06-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,14.9,30.7,3,0.85,3.680,20.5,01-BLP,ideal,880,Historico Colab
+2026-06-28,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,16.0,31.0,3,0.60,3.252,20.0,01-BLP,ideal,452,Historico Colab
+2026-06-29,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,15.0,32.0,3,0.58,5.500,20.3,02-BLG,limite,0,Historico Colab
+2026-07-02,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,12.5,30.0,3,0.90,3.716,20.3,01-BLP,ideal,916,Historico Colab
+2026-07-06,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,15.3,29.0,3,0.73,3.518,20.8,01-BLP,ideal,718,Historico Colab
+2026-07-07,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,16.0,31.4,2,0.73,6.900,40.3,BG14,ideal,-100,Historico Colab
+2026-07-08,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,15.0,33.4,3,0.73,7.200,40.9,BG14,fraco,200,Historico Colab
+2026-07-10,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,15.2,31.9,3,0.73,6.980,40.5,BG14,ideal,-20,Historico Colab
+2026-07-11,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,17.6,31.8,4,0.70,5.585,20.2,02-BLG,ideal,85,Historico Colab
+2026-07-13,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,4,0,1,0.775,0.000,0.225,17.9,31.1,3,0.83,3.525,20.0,01-BLP,ideal,725,Historico Colab
+2026-07-15,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,16.5,32.2,2,0.78,3.539,20.0,01-BLP,fraco,739,Historico Colab
+2026-07-16,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,18.0,32.2,3,0.80,3.585,20.2,01-BLP,fraco,785,Historico Colab
+2026-07-18,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,19.0,32.7,3,0.85,3.535,20.7,01-BLP,fraco,735,Historico Colab
+2026-07-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,19.0,26.0,3,0.85,3.500,20.5,01-BLP,forte,700,Historico Colab
+2026-07-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,15.9,28.2,3,0.80,3.570,20.1,01-BLP,ideal,770,Historico Colab
+2026-07-22,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.8,28.5,3,0.88,3.550,20.2,01-BLP,ideal,750,Historico Colab
+2026-07-23,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,2,0.733,0.000,0.267,13.8,28.8,3,0.83,3.500,20.2,01-BLP,ideal,700,Historico Colab
+2026-07-25,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,5,0,2,0.757,0.000,0.243,15.0,27.6,4,0.83,3.570,20.4,01-BLP,forte,770,Historico Colab
+2026-07-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,14.9,30.7,3,0.75,3.680,20.5,01-BLP,ideal,880,Historico Colab
+2026-07-28,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,16.0,31.0,3,0.60,3.252,20.0,01-BLP,ideal,452,Historico Colab
+2026-07-29,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,15.0,32.0,3,0.58,5.500,20.3,02-BLG,limite,0,Historico Colab
+2026-07-31,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,15.0,32.0,3,0.58,3.500,20.3,01-BLP,limite,700,Historico Colab
+2026-08-03,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.5,33.0,3,0.63,2.825,20.5,01-BLP,fraco,25,Historico Colab
+2026-08-05,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,1,0,1,1,0,1,0.500,0.000,0.500,15.5,25.0,3,0.58,2.800,20.1,01-BLP,forte,0,Historico Colab
+2026-08-06,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,5,0,1,5,0,1,0.833,0.000,0.167,16.0,24.7,3,0.53,2.837,20.5,01-BLP,forte,37,Historico Colab
+2026-08-08,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,18.0,31.0,3,0.63,2.817,20.5,01-BLP,ideal,17,Historico Colab
+2026-08-10,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,29.1,3,0.70,6.520,40.4,BG14,ideal,-480,Historico Colab
+2026-08-12,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,13.0,27.6,3,0.65,2.842,20.5,01-BLP,forte,42,Historico Colab
+2026-08-17,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,15.0,28.0,4,0.63,2.817,20.2,01-BLP,ideal,17,Historico Colab
+2026-08-19,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,18.0,29.2,3,0.80,6.800,40.5,BG14,ideal,-200,Historico Colab
+2026-08-20,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.0,28.8,3,0.60,2.865,20.5,01-BLP,ideal,65,Historico Colab
+2026-08-21,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.9,27.7,3,0.60,2.840,20.3,01-BLP,forte,40,Historico Colab
+2026-08-25,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,17.6,29.0,3,0.60,2.850,20.5,01-BLP,ideal,50,Historico Colab
+2026-08-26,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,4,0,1,4,0,1,0.800,0.000,0.200,19.0,26.0,5,0.60,2.880,20.4,01-BLP,forte,80,Historico Colab
+2026-08-27,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,2,0,1,4,0,1,0.733,0.000,0.267,19.5,22.0,3,0.60,2.817,20.5,01-BLP,forte,17,Historico Colab
+2026-08-27,Unica,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,0,1,3,0,1,0.750,0.000,0.250,16.1,27.5,3,0.69,2.831,20.3,01-BLP,forte,31,Historico Colab
+2026-09-02,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,17.0,30.0,3,0.68,2.935,20.3,01-BLP,ideal,135,Historico Colab
+2026-09-07,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,17.7,31.1,3,0.61,5.780,40.5,02-BLG,ideal,280,Historico Colab
+2026-09-08,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,17.8,31.3,3,0.65,2.990,20.4,01-BLP,ideal,190,Historico Colab
+2026-09-09,Mesclada,01_BR_ARG_PRETO_SV,Nenhum,03_BR_AREN_BRANCO_STPRAZ,3,1,1,3,1,2,0.550,0.183,0.267,16.2,32.5,4,0.65,2.960,20.4,01-BLP,fraco,160,Historico Colab"""
 
 COLUNAS_BARROS = ["codigo", "nome", "tipo_base", "localidade", "status"]
-COLUNAS_PRODUTOS = ["chave_comercial", "codigo", "largura", "comprimento_nominal", "comp_seco_ideal", "peso_padrao", "status"]
-COLUNAS_LOTES = [
-    "data", "modo", "cod_barro_preto", "cod_barro_amarelo", "cod_barro_branco",
-    "preto_a", "amarelo_a", "branco_a", "preto_b", "amarelo_b", "branco_b",
-    "pct_preto", "pct_amarelo", "pct_branco", "umidade", "residuo", "retracao",
-    "esp_parede", "peso", "comprimento", "tipo_bloco", "class_residuo", "excesso_peso", "observacoes"
+COLUNAS_PRODUTOS = [
+    "chave_comercial", "codigo", "largura", "comprimento_nominal",
+    "comp_seco_ideal", "peso_padrao", "status",
 ]
-COLUNAS_PURO = ["data", "codigo_barro", "peso_amostra_g", "peso_residuo_g", "pct_residuo_puro", "observacoes"]
+COLUNAS_LOTES = [
+    "data", "modo", "cod_barro_preto", "cod_barro_amarelo",
+    "cod_barro_branco", "preto_a", "amarelo_a", "branco_a",
+    "preto_b", "amarelo_b", "branco_b", "pct_preto", "pct_amarelo",
+    "pct_branco", "umidade", "residuo", "retracao", "esp_parede",
+    "peso", "comprimento", "tipo_bloco", "class_residuo",
+    "excesso_peso", "observacoes",
+]
+COLUNAS_PURO = [
+    "data", "codigo_barro", "peso_amostra_g", "peso_residuo_g",
+    "pct_residuo_puro", "observacoes",
+]
 
 # ============================================================
-# INICIALIZACAO DOS DATAFRAMES
+# CARREGAMENTO E AUTO-SEED (GRAVACAO AUTOMATICA NO SHEETS)
 # ============================================================
 
-# 1. Barros
 if "catalogo_barros" not in st.session_state:
     if MODO_SHEETS and worksheet_barros:
         df_b = ler_dados_sheets(worksheet_barros, COLUNAS_BARROS)
@@ -250,7 +383,6 @@ if "catalogo_barros" not in st.session_state:
         st.session_state.catalogo_barros = pd.DataFrame(BARROS_INICIAIS)
         st.session_state.catalogo_barros.to_csv("db_catalogo_barros.csv", index=False)
 
-# 2. Produtos
 if "catalogo_produtos" not in st.session_state:
     if MODO_SHEETS and worksheet_produtos:
         df_p = ler_dados_sheets(worksheet_produtos, COLUNAS_PRODUTOS)
@@ -264,13 +396,14 @@ if "catalogo_produtos" not in st.session_state:
         st.session_state.catalogo_produtos = pd.DataFrame(PRODUTOS_INICIAIS)
         st.session_state.catalogo_produtos.to_csv("db_catalogo_produtos.csv", index=False)
 
-# 3. Lotes
+# AUTO-SEED DE LOTES: Se a aba lotes estiver vazia no Sheets, popula automaticamente!
 if "df_master" not in st.session_state:
     if MODO_SHEETS and worksheet_lotes:
         df_l = ler_dados_sheets(worksheet_lotes, COLUNAS_LOTES)
         if len(df_l) == 0:
             df_l = pd.read_csv(io.StringIO(HISTORICO_BASE_CSV))
             salvar_no_sheets(worksheet_lotes, df_l)
+            st.toast("Google Sheets estava vazio: 115 lotes historicos inseridos com sucesso!")
         st.session_state.df_master = df_l
     elif os.path.exists("db_df_master.csv"):
         st.session_state.df_master = pd.read_csv("db_df_master.csv")
@@ -278,11 +411,9 @@ if "df_master" not in st.session_state:
         st.session_state.df_master = pd.read_csv(io.StringIO(HISTORICO_BASE_CSV))
         st.session_state.df_master.to_csv("db_df_master.csv", index=False)
 
-# 4. Barro Puro
 if "analises_puro" not in st.session_state:
     if MODO_SHEETS and worksheet_puro:
-        df_pu = ler_dados_sheets(worksheet_puro, COLUNAS_PURO)
-        st.session_state.analises_puro = df_pu
+        st.session_state.analises_puro = ler_dados_sheets(worksheet_puro, COLUNAS_PURO)
     elif os.path.exists("db_analises_puro.csv"):
         st.session_state.analises_puro = pd.read_csv("db_analises_puro.csv")
     else:
@@ -292,25 +423,33 @@ if "analises_puro" not in st.session_state:
 if "diagnostico_gerado" not in st.session_state:
     st.session_state.diagnostico_gerado = False
 
-# ============================================================
-# PERSISTENCIA CENTRALIZADA
-# ============================================================
+if "versao_dados" not in st.session_state:
+    st.session_state.versao_dados = 0
+
+def marcar_dados_alterados():
+    st.session_state.versao_dados += 1
+
 def persistir_dados(tipo):
     if tipo == "barros":
         df = st.session_state.catalogo_barros
         if MODO_SHEETS and worksheet_barros:
             salvar_no_sheets(worksheet_barros, df)
         df.to_csv("db_catalogo_barros.csv", index=False)
+
     elif tipo == "produtos":
         df = st.session_state.catalogo_produtos
         if MODO_SHEETS and worksheet_produtos:
             salvar_no_sheets(worksheet_produtos, df)
         df.to_csv("db_catalogo_produtos.csv", index=False)
+        marcar_dados_alterados()
+
     elif tipo == "lotes":
         df = st.session_state.df_master
         if MODO_SHEETS and worksheet_lotes:
             salvar_no_sheets(worksheet_lotes, df)
         df.to_csv("db_df_master.csv", index=False)
+        marcar_dados_alterados()
+
     elif tipo == "puro":
         df = st.session_state.analises_puro
         if MODO_SHEETS and worksheet_puro:
@@ -318,23 +457,96 @@ def persistir_dados(tipo):
         df.to_csv("db_analises_puro.csv", index=False)
 
 # ============================================================
-# MODELOS DE IA
+# IA AUTO-APRENDIZ: TREINO DINAMICO A PARTIR DO GOOGLE SHEETS
 # ============================================================
-@st.cache_resource
-def carregar_modelos():
-    m_res = joblib.load("modelo_residuo.pkl")
-    m_ret = joblib.load("modelo_retracao.pkl")
-    m_pes = joblib.load("modelo_peso.pkl")
-    return m_res, m_ret, m_pes
+FEATURES_MODELO = [
+    "pct_preto", "pct_amarelo", "pct_branco",
+    "umidade", "esp_parede", "largura_cm", "comprimento_cm",
+]
 
-try:
-    m_res, m_ret, m_pes = carregar_modelos()
-except Exception as e:
-    st.error(f"Erro ao carregar os arquivos de modelo .pkl: {e}")
+def montar_dataset_treino(df_lotes, df_produtos):
+    if len(df_lotes) == 0:
+        return pd.DataFrame(columns=FEATURES_MODELO + ["residuo", "retracao", "peso"])
+
+    df = df_lotes.copy()
+
+    mapa_largura = dict(zip(df_produtos["codigo"], df_produtos["largura"]))
+    df["largura_cm"] = df["tipo_bloco"].map(mapa_largura)
+    df["comprimento_cm"] = pd.to_numeric(df["comprimento"], errors="coerce")
+
+    for col in ["pct_preto", "pct_amarelo", "pct_branco", "umidade",
+                "esp_parede", "residuo", "retracao", "peso"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df.dropna(subset=FEATURES_MODELO + ["residuo", "retracao", "peso"])
+    return df
+
+def treinar_modelos_ia(df_lotes, df_produtos):
+    df = montar_dataset_treino(df_lotes, df_produtos)
+    n = len(df)
+
+    if n < 5:
+        return None, None, None, {
+            "n": n, "r2_peso": None, "r2_residuo": None, "r2_retracao": None
+        }
+
+    X = df[FEATURES_MODELO].astype(float)
+
+    m_pes = GradientBoostingRegressor(random_state=42)
+    m_pes.fit(X, df["peso"].astype(float))
+
+    m_res = GradientBoostingRegressor(random_state=42)
+    m_res.fit(X, df["residuo"].astype(float))
+
+    m_ret = GradientBoostingRegressor(random_state=42)
+    m_ret.fit(X, df["retracao"].astype(float))
+
+    metricas = {
+        "n": n,
+        "r2_peso": round(r2_score(df["peso"], m_pes.predict(X)), 3),
+        "r2_residuo": round(r2_score(df["residuo"], m_res.predict(X)), 3),
+        "r2_retracao": round(r2_score(df["retracao"], m_ret.predict(X)), 3),
+    }
+    return m_pes, m_res, m_ret, metricas
+
+if (
+    "modelos_ia" not in st.session_state
+    or st.session_state.get("versao_treinada") != st.session_state.versao_dados
+):
+    with st.spinner("Calibrando IA com os dados mais recentes do Google Sheets..."):
+        m_pes, m_res, m_ret, metricas_ia = treinar_modelos_ia(
+            st.session_state.df_master, st.session_state.catalogo_produtos
+        )
+    st.session_state.modelos_ia = (m_pes, m_res, m_ret)
+    st.session_state.metricas_ia = metricas_ia
+    st.session_state.versao_treinada = st.session_state.versao_dados
+else:
+    m_pes, m_res, m_ret = st.session_state.modelos_ia
+    metricas_ia = st.session_state.metricas_ia
+
+if m_pes is None:
+    st.error(
+        f"Dados insuficientes para treinar a IA (apenas {metricas_ia['n']} "
+        "lotes validos encontrados). Registre pelo menos 5 lotes completos "
+        "na aba de Registro de Analise para liberar as previsoes."
+    )
     st.stop()
 
+st.sidebar.markdown(
+    f'<div class="status-ok">IA treinada com {metricas_ia["n"]} lotes reais</div>',
+    unsafe_allow_html=True,
+)
+with st.sidebar.expander("Detalhes do treinamento da IA"):
+    st.write(f"R2 Peso: {metricas_ia['r2_peso']}")
+    st.write(f"R2 Residuo: {metricas_ia['r2_residuo']}")
+    st.write(f"R2 Retracao: {metricas_ia['r2_retracao']}")
+    st.caption(
+        "Metricas calculadas sobre os proprios dados de treino (ajuste interno). "
+        "A IA e recalibrada automaticamente a cada novo lote registrado."
+    )
+
 # ============================================================
-# ABAS DA PLATAFORMA
+# ABAS PRINCIPAIS
 # ============================================================
 tab_diag, tab_reg, tab_puro, tab_barros, tab_produtos = st.tabs([
     "Diagnostico e Previsao",
@@ -355,7 +567,7 @@ with tab_diag:
     ]
 
     if len(df_prod_ativos) == 0:
-        st.sidebar.error("Nenhum produto ativo cadastrado! Va na aba Gerenciar Produtos.")
+        st.sidebar.error("Nenhum produto ativo cadastrado. Va na aba Gerenciar Produtos.")
         st.stop()
 
     produto_sel = st.sidebar.selectbox(
@@ -373,8 +585,8 @@ with tab_diag:
     comprimento_nominal = float(dados_prod["comprimento_nominal"])
 
     st.sidebar.info(
-        f"**Meta de Peso Padrao:** {peso_padrao:.3f} kg\n\n"
-        f"**Comprimento Seco Ideal:** {comp_seco_ideal:.1f} cm "
+        f"Meta de Peso Padrao: {peso_padrao:.3f} kg\n\n"
+        f"Comprimento Seco Ideal: {comp_seco_ideal:.1f} cm "
         f"(para resultar em {comprimento_nominal:.1f} cm apos queima)"
     )
 
@@ -394,9 +606,7 @@ with tab_diag:
             barros_pretos if barros_pretos else ["01_BR_ARG_PRETO_SV"],
         )
     with col_b2:
-        sel_barro_amarelo = st.selectbox(
-            "Barro Intermediario (Medio):", barros_amarelos
-        )
+        sel_barro_amarelo = st.selectbox("Barro Intermediario (Medio):", barros_amarelos)
     with col_b3:
         sel_barro_branco = st.selectbox(
             "Barro Arenoso (Fraco):",
@@ -417,16 +627,22 @@ with tab_diag:
         with c1:
             preto_a = st.number_input("Conchas de Preto", 0, 10, 4, 1)
         with c2:
-            amarelo_a = st.number_input("Conchas de Amarelo", 0, 10, 0 if sel_barro_amarelo == "Nenhum" else 1, 1)
+            amarelo_a = st.number_input(
+                "Conchas de Amarelo", 0, 10, 0 if sel_barro_amarelo == "Nenhum" else 1, 1
+            )
         with c3:
-            branco_a = st.number_input("Conchas de Branco", 0, 10, 1 if sel_barro_branco != "Nenhum" else 0, 1)
+            branco_a = st.number_input(
+                "Conchas de Branco", 0, 10, 1 if sel_barro_branco != "Nenhum" else 0, 1
+            )
 
         preto_b, amarelo_b, branco_b = preto_a, amarelo_a, branco_a
         tot_a = max(1, preto_a + amarelo_a + branco_a)
         pct_preto = preto_a / tot_a
         pct_amarelo = amarelo_a / tot_a
         pct_branco = branco_a / tot_a
-        mistura_desc = f"{preto_a}x{amarelo_a}x{branco_a}" if amarelo_a > 0 else f"{preto_a}x{branco_a}"
+        mistura_desc = (
+            f"{preto_a}x{amarelo_a}x{branco_a}" if amarelo_a > 0 else f"{preto_a}x{branco_a}"
+        )
 
     else:
         st.subheader("Receita A")
@@ -456,7 +672,7 @@ with tab_diag:
         mistura_desc = f"Mesclada ({preto_a}x{branco_a} e {preto_b}x{branco_b})"
 
     st.caption(
-        f"**Massa Resultante na Maromba:** {pct_preto*100:.1f}% Argiloso | "
+        f"Massa Resultante na Maromba: {pct_preto*100:.1f}% Argiloso | "
         f"{pct_amarelo*100:.1f}% Medio | {pct_branco*100:.1f}% Arenoso"
     )
 
@@ -474,7 +690,7 @@ with tab_diag:
             15.0, 45.0, float(comp_seco_ideal), 0.1,
             help=(
                 f"Tamanho ideal seco para este produto e {comp_seco_ideal:.1f} cm. "
-                "Se a guilhotina cortar maior (ex: 20,4 cm), o peso aumenta!"
+                "Se a guilhotina cortar maior, o peso aumenta."
             ),
         )
 
@@ -503,15 +719,16 @@ with tab_diag:
         diff_comp = comprimento_cm - comp_seco_ideal
         if diff_comp > 0.15:
             st.warning(
-                f"**ALERTA DE CORTE NO CARRETEL:** Bloco seco cortado com "
-                f"**{comprimento_cm:.1f} cm** (+{diff_comp*10:.0f} mm acima do ideal de {comp_seco_ideal:.1f} cm). "
-                "Esse excesso de comprimento aumenta o peso do bloco! Ajuste a guilhotina."
+                f"ALERTA DE CORTE NO CARRETEL: Bloco seco cortado com "
+                f"{comprimento_cm:.1f} cm (+{diff_comp*10:.0f} mm acima do ideal "
+                f"de {comp_seco_ideal:.1f} cm). Esse excesso aumenta o peso. "
+                "Ajuste a guilhotina da extrusora."
             )
         elif diff_comp < -0.15:
             st.warning(
-                f"**ATENCAO AO CORTE:** Bloco seco cortado com "
-                f"**{comprimento_cm:.1f} cm** (-{abs(diff_comp)*10:.0f} mm abaixo do ideal de {comp_seco_ideal:.1f} cm). "
-                "Risco de ficar curto apos a queima."
+                f"ATENCAO AO CORTE: Bloco seco cortado com "
+                f"{comprimento_cm:.1f} cm (-{abs(diff_comp)*10:.0f} mm abaixo do "
+                f"ideal de {comp_seco_ideal:.1f} cm). Risco de ficar curto apos a queima."
             )
 
         res1, res2, res3 = st.columns(3)
@@ -535,7 +752,7 @@ with tab_diag:
         with res2:
             st.metric("Retracao Prevista", f"{pred_ret:.1f}%")
             comp_estimado_queimado = comprimento_cm * (1 - (pred_ret / 100))
-            st.caption(f"Comprimento Queimado Est.: **{comp_estimado_queimado:.1f} cm**")
+            st.caption(f"Comprimento Queimado Est.: {comp_estimado_queimado:.1f} cm")
             if pred_ret > 4.5:
                 st.warning("Retracao Elevada (Atencao no secador)")
             else:
@@ -562,31 +779,38 @@ with tab_diag:
             st.subheader("Impacto Financeiro (Excesso de Massa)")
             c_p1, c_p2 = st.columns(2)
             with c_p1:
-                prod_dia = st.number_input("Producao Planejada do Dia (blocos):", 1000, 200000, 50000, 5000)
+                prod_dia = st.number_input(
+                    "Producao Planejada do Dia (blocos):", 1000, 200000, 50000, 5000
+                )
             with c_p2:
-                custo_barro = st.number_input("Custo da Tonelada do Barro (R$/ton):", 10.0, 200.0, 50.0, 5.0)
+                custo_barro = st.number_input(
+                    "Custo da Tonelada do Barro (R$/ton):", 10.0, 200.0, 50.0, 5.0
+                )
 
             ton_perdidas_dia = (excesso_g / 1000 * prod_dia) / 1000
             prejuizo_dia = ton_perdidas_dia * custo_barro
             prejuizo_mes = prejuizo_dia * 25
 
             st.error(
-                f"**Alerta de Perda de Materia-Prima:**\n\n"
+                f"Alerta de Perda de Materia-Prima:\n\n"
                 f"- Desperdicio de Massa: {ton_perdidas_dia:.2f} toneladas/dia\n"
                 f"- Prejuizo Estimado no Dia: R$ {prejuizo_dia:,.2f}\n"
                 f"- Impacto Estimado no Mes (25 dias): R$ {prejuizo_mes:,.2f}"
             )
-            texto_fin_wa = f"\nPREJUIZO EST.: R$ {prejuizo_dia:,.0f}/dia ({ton_perdidas_dia:.1f} ton desperdicadas)"
+            texto_fin_wa = (
+                f"\nPrejuizo estimado: R$ {prejuizo_dia:,.0f}/dia "
+                f"({ton_perdidas_dia:.1f} ton desperdicadas)"
+            )
 
         st.divider()
         msg_wa_diag = (
-            f"CeramicaIA — Diagnostico de Mistura\n\n"
+            f"CeramicaIA - Diagnostico de Mistura\n\n"
             f"Produto: {codigo_prod} ({largura_cm}x19x{comprimento_nominal}cm)\n"
             f"Barro Argiloso: {sel_barro_preto}\n"
             f"Barro Arenoso: {sel_barro_branco}\n"
             f"Mistura: {mistura_desc} | Umid: {umidade}% | Esp: {esp_parede}cm\n"
             f"Comp. Seco: {comprimento_cm:.1f} cm (Ideal: {comp_seco_ideal:.1f} cm)\n\n"
-            f"PREVISAO DA IA:\n"
+            f"Previsao da IA:\n"
             f"- Residuo: {pred_res:.1f}% ({class_res})\n"
             f"- Retracao: {pred_ret:.1f}% (Final queimado Est: {comp_estimado_queimado:.1f} cm)\n"
             f"- Peso Est.: {pred_pes:.3f} kg ({excesso_g:+.0f}g vs Meta){texto_fin_wa}\n\n"
@@ -594,21 +818,31 @@ with tab_diag:
         )
 
         wa_url_diag = f"https://wa.me/?text={urllib.parse.quote(msg_wa_diag)}"
-        st.link_button("Compartilhar Diagnostico no WhatsApp", wa_url_diag, type="secondary", use_container_width=True)
+        st.link_button(
+            "Compartilhar Diagnostico no WhatsApp", wa_url_diag,
+            type="secondary", use_container_width=True,
+        )
 
 # ============================================================
 # ABA 2: REGISTRAR ANALISE REAL DE MISTURA
 # ============================================================
 with tab_reg:
     st.header("Registrar Analise de Laboratorio (Mistura Extrudada)")
-    st.caption("Alimente o sistema com os dados medidos do bloco final para calibrar o aprendizado da IA.")
+    st.caption(
+        "Alimente o sistema com os dados medidos do bloco final. "
+        "A IA recalibra automaticamente apos o salvamento."
+    )
 
-    df_barros_ativos_reg = st.session_state.catalogo_barros[st.session_state.catalogo_barros["status"] == "Ativo"]
+    df_barros_ativos_reg = st.session_state.catalogo_barros[
+        st.session_state.catalogo_barros["status"] == "Ativo"
+    ]
     barros_pretos_reg = df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Preto"]["codigo"].tolist()
     barros_amarelos_reg = ["Nenhum"] + df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Amarelo"]["codigo"].tolist()
     barros_brancos_reg = ["Nenhum"] + df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Branco"]["codigo"].tolist()
 
-    df_prod_ativos_reg = st.session_state.catalogo_produtos[st.session_state.catalogo_produtos["status"] == "Ativo"]
+    df_prod_ativos_reg = st.session_state.catalogo_produtos[
+        st.session_state.catalogo_produtos["status"] == "Ativo"
+    ]
 
     with st.form("form_registro_lote", clear_on_submit=True):
         st.subheader("1. Identificacao e Barro Utilizado")
@@ -622,9 +856,14 @@ with tab_reg:
             peso_meta_l = float(row_prod_reg["peso_padrao"])
 
         with f_col2:
-            cod_p_reg = st.selectbox("Codigo Barro Preto:", barros_pretos_reg if barros_pretos_reg else ["01_BR_ARG_PRETO_SV"])
+            cod_p_reg = st.selectbox(
+                "Codigo Barro Preto:", barros_pretos_reg if barros_pretos_reg else ["01_BR_ARG_PRETO_SV"]
+            )
             cod_a_reg = st.selectbox("Codigo Barro Amarelo:", barros_amarelos_reg)
-            cod_b_reg = st.selectbox("Codigo Barro Branco:", barros_brancos_reg if len(barros_brancos_reg) > 1 else ["03_BR_AREN_BRANCO_STPRAZ"])
+            cod_b_reg = st.selectbox(
+                "Codigo Barro Branco:",
+                barros_brancos_reg if len(barros_brancos_reg) > 1 else ["03_BR_AREN_BRANCO_STPRAZ"],
+            )
         with f_col3:
             modo_lote = st.selectbox("Tipo de Producao", ["Unica", "Mesclada"])
 
@@ -656,14 +895,16 @@ with tab_reg:
         with f_col8:
             comp_real_medido = st.number_input(
                 "Comprimento Seco Medido (cm):", 10.0, 50.0, float(comp_seco_sugerido), 0.1,
-                help="Tamanho medido com paquimetro/trena no bloco seco."
+                help="Tamanho medido com paquimetro/trena no bloco seco.",
             )
         with f_col9:
             peso_real = st.number_input("Peso Real Medido (kg)", 0.0, 15.0, 3.100, 0.001)
         with f_col10:
             obs_texto = st.text_area("Observacoes:", "Teste de rotina")
 
-        btn_salvar = st.form_submit_button("Salvar Registro e Unificar Base", type="primary", use_container_width=True)
+        btn_salvar = st.form_submit_button(
+            "Salvar Registro e Recalibrar IA", type="primary", use_container_width=True
+        )
 
         if btn_salvar:
             tot_a_l = max(1, p_a + a_a + b_a)
@@ -681,12 +922,8 @@ with tab_reg:
                 "cod_barro_preto": cod_p_reg,
                 "cod_barro_amarelo": cod_a_reg,
                 "cod_barro_branco": cod_b_reg,
-                "preto_a": p_a,
-                "amarelo_a": a_a,
-                "branco_a": b_a,
-                "preto_b": p_b,
-                "amarelo_b": a_b,
-                "branco_b": b_b,
+                "preto_a": p_a, "amarelo_a": a_a, "branco_a": b_a,
+                "preto_b": p_b, "amarelo_b": a_b, "branco_b": b_b,
                 "pct_preto": round(pct_p_l, 3),
                 "pct_amarelo": round(pct_a_l, 3),
                 "pct_branco": round(pct_b_l, 3),
@@ -709,13 +946,15 @@ with tab_reg:
 
             persistir_dados("lotes")
 
-            st.success("Lote registrado com sucesso com o Comprimento Seco Medido!")
+            st.success(
+                "Lote registrado com sucesso. A IA sera recalibrada automaticamente."
+            )
 
             msg_wa_reg = (
-                f"CeramicaIA — Registro de Lab Real\n\n"
+                f"CeramicaIA - Registro de Lab Real\n\n"
                 f"Data: {data_lote.strftime('%d/%m/%Y')} | Produto: {codigo_selecionado}\n"
                 f"Barro Preto: {cod_p_reg} | Branco: {cod_b_reg}\n"
-                f"MENSURACOES REAIS:\n"
+                f"Mensuracoes reais:\n"
                 f"- Residuo: {residuo_real}% ({class_res_l.upper()})\n"
                 f"- Umidade: {umidade_real}% | Retracao: {retracao_real}%\n"
                 f"- Comp. Seco: {comp_real_medido:.1f} cm | Espessura: {esp_real} cm\n"
@@ -732,7 +971,7 @@ with tab_reg:
 
     csv_completo = st.session_state.df_master.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="BAIXAR PLANILHA COMPLETA ATUALIZADA PARA RE-TREINO (CSV)",
+        label="BAIXAR PLANILHA COMPLETA (BACKUP CSV)",
         data=csv_completo,
         file_name=f"ceramica_lotes_completo_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv",
@@ -741,13 +980,15 @@ with tab_reg:
     )
 
 # ============================================================
-# ABA 3: ANALISE DE BARRO PURO (RECEBIMENTO DE CAMINHAO)
+# ABA 3: ANALISE DE BARRO PURO
 # ============================================================
 with tab_puro:
-    st.header("Controle de Qualidade na Entrada — Barro Puro (Jazida)")
+    st.header("Controle de Qualidade na Entrada - Barro Puro (Jazida)")
     st.caption("Registre a quantidade de areia/residuo da materia-prima pura que chega dos caminhoes.")
 
-    df_barros_ativos_puro = st.session_state.catalogo_barros[st.session_state.catalogo_barros["status"] == "Ativo"]
+    df_barros_ativos_puro = st.session_state.catalogo_barros[
+        st.session_state.catalogo_barros["status"] == "Ativo"
+    ]
     lista_barros_puro = df_barros_ativos_puro["codigo"].tolist()
 
     col_puro1, col_puro2 = st.columns([1, 2])
@@ -761,15 +1002,21 @@ with tab_puro:
                 lista_barros_puro if lista_barros_puro else ["01_BR_ARG_PRETO_SV"],
             )
 
-            peso_amostra = st.number_input("Peso da Amostra Seca (g):", min_value=1.0, max_value=1000.0, value=100.0, step=10.0)
-            peso_residuo_puro = st.number_input("Peso do Residuo Seco Retido (g):", min_value=0.0, max_value=500.0, value=35.0, step=1.0)
+            peso_amostra = st.number_input(
+                "Peso da Amostra Seca (g):", min_value=1.0, max_value=1000.0, value=100.0, step=10.0
+            )
+            peso_residuo_puro = st.number_input(
+                "Peso do Residuo Seco Retido (g):", min_value=0.0, max_value=500.0, value=35.0, step=1.0
+            )
 
             pct_calculada = (peso_residuo_puro / peso_amostra) * 100 if peso_amostra > 0 else 0
-            st.info(f"**Residuo do Barro Puro:** {pct_calculada:.1f}%")
+            st.info(f"Residuo do Barro Puro: {pct_calculada:.1f}%")
 
             obs_puro = st.text_area("Observacoes (Lote/Caminhao):", "Caminhao 01 - Jazida Nova")
 
-            btn_salvar_puro = st.form_submit_button("Salvar Laudo do Barro Puro", type="primary", use_container_width=True)
+            btn_salvar_puro = st.form_submit_button(
+                "Salvar Laudo do Barro Puro", type="primary", use_container_width=True
+            )
 
             if btn_salvar_puro:
                 novo_puro_dict = {
@@ -788,7 +1035,7 @@ with tab_puro:
 
                 persistir_dados("puro")
 
-                st.success(f"Laudo do Barro `{cod_puro_sel}` ({pct_calculada:.1f}% residuo) registrado!")
+                st.success(f"Laudo do Barro {cod_puro_sel} ({pct_calculada:.1f}% residuo) registrado.")
 
     with col_puro2:
         st.subheader("Historico de Qualidade dos Barros Puros (Jazida)")
@@ -798,7 +1045,7 @@ with tab_puro:
             st.info("Nenhum teste de barro puro registrado ainda nesta sessao.")
 
 # ============================================================
-# ABA 4: CADASTRO E GESTAO DE BARROS / JAZIDAS
+# ABA 4: CADASTRO E GESTAO DE BARROS
 # ============================================================
 with tab_barros:
     st.header("Cadastro e Controle de Barros / Jazidas")
@@ -820,7 +1067,7 @@ with tab_barros:
                 if novo_cod and novo_nome:
                     cod_clean = novo_cod.strip().upper()
                     if cod_clean in st.session_state.catalogo_barros["codigo"].values:
-                        st.error(f"O codigo `{cod_clean}` ja esta cadastrado!")
+                        st.error(f"O codigo {cod_clean} ja esta cadastrado.")
                     else:
                         novo_barro_dict = {
                             "codigo": cod_clean,
@@ -834,7 +1081,7 @@ with tab_barros:
                             ignore_index=True,
                         )
                         persistir_dados("barros")
-                        st.success(f"Barro `{cod_clean}` cadastrado!")
+                        st.success(f"Barro {cod_clean} cadastrado.")
                         st.rerun()
                 else:
                     st.error("Preencha o Codigo e o Nome do Barro.")
@@ -871,15 +1118,22 @@ with tab_barros:
 
                     if not edit_cod_clean:
                         st.error("O codigo do barro nao pode ser vazio.")
-                    elif edit_cod_clean != barro_edit_sel and edit_cod_clean in st.session_state.catalogo_barros["codigo"].values:
-                        st.error(f"O codigo `{edit_cod_clean}` ja existe em outro cadastro!")
+                    elif (
+                        edit_cod_clean != barro_edit_sel
+                        and edit_cod_clean in st.session_state.catalogo_barros["codigo"].values
+                    ):
+                        st.error(f"O codigo {edit_cod_clean} ja existe em outro cadastro.")
                     else:
                         if edit_cod_clean != barro_edit_sel:
                             for col in ["cod_barro_preto", "cod_barro_amarelo", "cod_barro_branco"]:
-                                st.session_state.df_master[col] = st.session_state.df_master[col].replace(barro_edit_sel, edit_cod_clean)
+                                st.session_state.df_master[col] = st.session_state.df_master[col].replace(
+                                    barro_edit_sel, edit_cod_clean
+                                )
                             persistir_dados("lotes")
 
-                            st.session_state.analises_puro["codigo_barro"] = st.session_state.analises_puro["codigo_barro"].replace(barro_edit_sel, edit_cod_clean)
+                            st.session_state.analises_puro["codigo_barro"] = st.session_state.analises_puro["codigo_barro"].replace(
+                                barro_edit_sel, edit_cod_clean
+                            )
                             persistir_dados("puro")
 
                         st.session_state.catalogo_barros.at[idx_muda, "codigo"] = edit_cod_clean
@@ -889,7 +1143,7 @@ with tab_barros:
                         st.session_state.catalogo_barros.at[idx_muda, "status"] = edit_status
 
                         persistir_dados("barros")
-                        st.success("Barro atualizado e referencias corrigidas em cascata!")
+                        st.success("Barro atualizado e referencias corrigidas em cascata.")
                         st.rerun()
 
     st.divider()
@@ -897,11 +1151,11 @@ with tab_barros:
     st.dataframe(st.session_state.catalogo_barros, use_container_width=True)
 
 # ============================================================
-# ABA 5: CADASTRO E GESTAO DE PRODUTOS / BLOCOS
+# ABA 5: CADASTRO E GESTAO DE PRODUTOS
 # ============================================================
 with tab_produtos:
     st.header("Cadastro e Controle de Produtos / Blocos")
-    st.caption("Adicione novos produtos do seu portfolio de vendas, ajuste as metas de peso padrao, dimensoes e comprimento de corte.")
+    st.caption("Adicione novos produtos, ajuste metas de peso padrao, dimensoes e comprimento de corte.")
 
     col_prod1, col_prod2 = st.columns(2)
 
@@ -927,9 +1181,13 @@ with tab_produtos:
                 if n_prod_cod and n_prod_nome:
                     prod_cod_clean = n_prod_cod.strip().upper()
                     if prod_cod_clean in st.session_state.catalogo_produtos["codigo"].values:
-                        st.error(f"O codigo `{prod_cod_clean}` ja esta cadastrado!")
+                        st.error(f"O codigo {prod_cod_clean} ja esta cadastrado.")
                     else:
-                        nova_chave = f"{prod_cod_clean} ({n_prod_larg:.0f}x{n_prod_comp_nom:.0f}x{n_prod_comp_nom:.0f} cm) — {n_prod_nome.strip()}"
+                        nova_chave = (
+                            f"{prod_cod_clean} ({n_prod_larg:.0f}x{n_prod_comp_nom:.0f}x"
+                            f"{n_prod_comp_nom:.0f} cm) - {n_prod_nome.strip()}"
+                        )
+
                         novo_prod_dict = {
                             "chave_comercial": nova_chave,
                             "codigo": prod_cod_clean,
@@ -945,7 +1203,7 @@ with tab_produtos:
                             ignore_index=True,
                         )
                         persistir_dados("produtos")
-                        st.success(f"Produto `{prod_cod_clean}` cadastrado!")
+                        st.success(f"Produto {prod_cod_clean} cadastrado.")
                         st.rerun()
                 else:
                     st.error("Preencha o Codigo e a Descricao Comercial.")
@@ -961,9 +1219,11 @@ with tab_produtos:
             ].iloc[0]
 
             with st.form("form_editar_produto"):
-                edit_prod_cod = st.text_input("Codigo do Produto (Editar se necessario):", value=dados_prod_atual["codigo"])
+                edit_prod_cod = st.text_input(
+                    "Codigo do Produto (Editar se necessario):", value=dados_prod_atual["codigo"]
+                )
                 try:
-                    descricao_atual = dados_prod_atual["chave_comercial"].split(" — ")[-1]
+                    descricao_atual = dados_prod_atual["chave_comercial"].split(" - ")[-1]
                 except Exception:
                     descricao_atual = dados_prod_atual["chave_comercial"]
 
@@ -971,19 +1231,35 @@ with tab_produtos:
 
                 ce_dim1, ce_dim2, ce_dim3 = st.columns(3)
                 with ce_dim1:
-                    edit_prod_larg = st.number_input("Largura (cm):", 5.0, 30.0, float(dados_prod_atual["largura"]), 0.5)
+                    edit_prod_larg = st.number_input(
+                        "Largura (cm):", 5.0, 30.0, float(dados_prod_atual["largura"]), 0.5
+                    )
                 with ce_dim2:
-                    edit_prod_comp_nom = st.number_input("Comprimento Nominal pos-queima (cm):", 5.0, 50.0, float(dados_prod_atual["comprimento_nominal"]), 0.5)
+                    edit_prod_comp_nom = st.number_input(
+                        "Comprimento Nominal pos-queima (cm):", 5.0, 50.0,
+                        float(dados_prod_atual["comprimento_nominal"]), 0.5,
+                    )
                 with ce_dim3:
-                    edit_prod_comp_sec = st.number_input("Comprimento Seco Ideal de Corte (cm):", 5.0, 55.0, float(dados_prod_atual["comp_seco_ideal"]), 0.5)
+                    edit_prod_comp_sec = st.number_input(
+                        "Comprimento Seco Ideal de Corte (cm):", 5.0, 55.0,
+                        float(dados_prod_atual["comp_seco_ideal"]), 0.5,
+                    )
 
-                edit_prod_peso = st.number_input("Meta de Peso Padrao (kg):", 0.500, 15.000, float(dados_prod_atual["peso_padrao"]), 0.050, format="%.3f")
+                edit_prod_peso = st.number_input(
+                    "Meta de Peso Padrao (kg):", 0.500, 15.000,
+                    float(dados_prod_atual["peso_padrao"]), 0.050, format="%.3f",
+                )
 
                 lista_status_p = ["Ativo", "Inativo"]
-                idx_status_p = lista_status_p.index(dados_prod_atual["status"]) if dados_prod_atual["status"] in lista_status_p else 0
+                idx_status_p = (
+                    lista_status_p.index(dados_prod_atual["status"])
+                    if dados_prod_atual["status"] in lista_status_p else 0
+                )
                 edit_prod_status = st.selectbox("Status do Produto:", lista_status_p, index=idx_status_p)
 
-                btn_salvar_prod_edit = st.form_submit_button("Salvar Alteracoes de Produto", type="primary", use_container_width=True)
+                btn_salvar_prod_edit = st.form_submit_button(
+                    "Salvar Alteracoes de Produto", type="primary", use_container_width=True
+                )
 
                 if btn_salvar_prod_edit:
                     idx_prod_muda = st.session_state.catalogo_produtos[
@@ -994,14 +1270,22 @@ with tab_produtos:
 
                     if not edit_prod_cod_clean:
                         st.error("O codigo do produto nao pode ser vazio.")
-                    elif edit_prod_cod_clean != prod_edit_sel and edit_prod_cod_clean in st.session_state.catalogo_produtos["codigo"].values:
-                        st.error(f"O codigo `{edit_prod_cod_clean}` ja existe em outro produto!")
+                    elif (
+                        edit_prod_cod_clean != prod_edit_sel
+                        and edit_prod_cod_clean in st.session_state.catalogo_produtos["codigo"].values
+                    ):
+                        st.error(f"O codigo {edit_prod_cod_clean} ja existe em outro produto.")
                     else:
                         if edit_prod_cod_clean != prod_edit_sel:
-                            st.session_state.df_master["tipo_bloco"] = st.session_state.df_master["tipo_bloco"].replace(prod_edit_sel, edit_prod_cod_clean)
+                            st.session_state.df_master["tipo_bloco"] = st.session_state.df_master["tipo_bloco"].replace(
+                                prod_edit_sel, edit_prod_cod_clean
+                            )
                             persistir_dados("lotes")
 
-                        nova_chave_edit = f"{edit_prod_cod_clean} ({edit_prod_larg:.0f}x{edit_prod_comp_nom:.0f}x{edit_prod_comp_nom:.0f} cm) — {edit_prod_nome.strip()}"
+                        nova_chave_edit = (
+                            f"{edit_prod_cod_clean} ({edit_prod_larg:.0f}x{edit_prod_comp_nom:.0f}x"
+                            f"{edit_prod_comp_nom:.0f} cm) - {edit_prod_nome.strip()}"
+                        )
 
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "codigo"] = edit_prod_cod_clean
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "chave_comercial"] = nova_chave_edit
@@ -1012,7 +1296,7 @@ with tab_produtos:
                         st.session_state.catalogo_produtos.at[idx_prod_muda, "status"] = edit_prod_status
 
                         persistir_dados("produtos")
-                        st.success("Produto atualizado e referencias corrigidas em cascata!")
+                        st.success("Produto atualizado e referencias corrigidas em cascata.")
                         st.rerun()
 
     st.divider()
