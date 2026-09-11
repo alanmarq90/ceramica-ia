@@ -1,6 +1,6 @@
 # ============================================================
-# CERAMICAIA v13.1 — Correcao do Calculo de Residuo Ponderado + 
-# Trava de Conchas 'Nenhum' + Modelos Fisicamente Isolados
+# CERAMICAIA v13.2 — Trava Inteligente de Barro 'Nenhum' + 
+# Correcao da Mesclagem Ponderada + Modelos Fisicamente Isolados
 # ============================================================
 
 import io
@@ -492,13 +492,13 @@ def obter_residuo_puro_barro(cod_barro, df_barros, df_puro):
             if not pd.isna(val_cad) and float(val_cad) > 0:
                 return float(val_cad)
 
-            # Fallback por tipo se residuo_puro estiver em branco no cadastro
+            # Fallback por tipo
             tipo = str(df_filtro_b.iloc[0].get("tipo_base", "")).strip().capitalize()
             if tipo == "Preto": return 10.0
             if tipo == "Amarelo": return 25.0
             if tipo == "Branco": return 45.0
 
-    # Fallback geral por padrao de codigo
+    # Fallback geral
     if "preto" in cod_clean.lower() or "sv" in cod_clean.lower(): return 10.0
     if "amarelo" in cod_clean.lower(): return 25.0
     if "branco" in cod_clean.lower() or "stpraz" in cod_clean.lower(): return 45.0
@@ -662,9 +662,10 @@ with tab_diag:
     ]
 
     barros_pretos = df_barros_ativos[df_barros_ativos["tipo_base"] == "Preto"]["codigo"].tolist()
-    barros_amarelos = ["Nenhum"] + df_barros_ativos[df_barros_ativos["tipo_base"] == "Amarelo"]["codigo"].tolist()
     
-    # Busca inteligente de barros brancos para nao padronizar em 'Nenhum'
+    amarelos_lista = df_barros_ativos[df_barros_ativos["tipo_base"] == "Amarelo"]["codigo"].tolist()
+    barros_amarelos = amarelos_lista + ["Nenhum"] if amarelos_lista else ["Nenhum"]
+
     brancos_lista = df_barros_ativos[df_barros_ativos["tipo_base"] == "Branco"]["codigo"].tolist()
     barros_brancos = brancos_lista + ["Nenhum"] if brancos_lista else ["03_BR_AREN_BRANCO_STPRAZ", "Nenhum"]
 
@@ -688,22 +689,27 @@ with tab_diag:
         horizontal=True,
     )
 
+    # TRAVAS DE SEGURANCA VISUAIS: Desativa inputs se o barro for 'Nenhum'
+    tem_amarelo = (sel_barro_amarelo != "Nenhum")
+    tem_branco = (sel_barro_branco != "Nenhum")
+
     if modo == "Receita Unica":
         c1, c2, c3 = st.columns(3)
         with c1:
             preto_a = st.number_input("Conchas de Preto", 0, 10, 4, 1)
         with c2:
             amarelo_a = st.number_input(
-                "Conchas de Amarelo", 0, 10, 0 if sel_barro_amarelo == "Nenhum" else 1, 1
+                "Conchas de Amarelo", 0, 10, 1 if tem_amarelo else 0, 1, disabled=not tem_amarelo,
+                help="Selecione um Barro Intermediario no menu acima para liberar este campo."
             )
         with c3:
             branco_a = st.number_input(
-                "Conchas de Branco", 0, 10, 0 if sel_barro_branco == "Nenhum" else 1, 1
+                "Conchas de Branco", 0, 10, 1 if tem_branco else 0, 1, disabled=not tem_branco,
+                help="Selecione um Barro Arenoso no menu acima para liberar este campo."
             )
 
-        # TRAVA DE SEGURANCA: Zerar conchas de barro "Nenhum"
-        if sel_barro_amarelo == "Nenhum": amarelo_a = 0
-        if sel_barro_branco == "Nenhum": branco_a = 0
+        if not tem_amarelo: amarelo_a = 0
+        if not tem_branco: branco_a = 0
 
         preto_b, amarelo_b, branco_b = preto_a, amarelo_a, branco_a
         tot_a = max(1, preto_a + amarelo_a + branco_a)
@@ -716,24 +722,35 @@ with tab_diag:
         st.subheader("Receita A")
         c1, c2, c3 = st.columns(3)
         with c1:
-            preto_a = st.number_input("Preto (A)", 0, 10, 4, 1)
+            preto_a = st.number_input("Preto (A)", 0, 10, 3, 1)
         with c2:
-            amarelo_a = st.number_input("Amarelo (A)", 0, 10, 0, 1)
+            amarelo_a = st.number_input(
+                "Amarelo (A)", 0, 10, 1 if tem_amarelo else 0, 1, disabled=not tem_amarelo,
+                help="Selecione um Barro Intermediario no menu acima para liberar."
+            )
         with c3:
-            branco_a = st.number_input("Branco (A)", 0, 10, 1, 1)
+            branco_a = st.number_input(
+                "Branco (A)", 0, 10, 2 if tem_branco else 0, 1, disabled=not tem_branco,
+                help="Selecione um Barro Arenoso no menu acima para liberar."
+            )
 
         st.subheader("Receita B")
         c4, c5, c6 = st.columns(3)
         with c4:
-            preto_b = st.number_input("Preto (B)", 0, 10, 4, 1)
+            preto_b = st.number_input("Preto (B)", 0, 10, 8, 1)
         with c5:
-            amarelo_b = st.number_input("Amarelo (B)", 0, 10, 0, 1)
+            amarelo_b = st.number_input(
+                "Amarelo (B)", 0, 10, 4 if tem_amarelo else 0, 1, disabled=not tem_amarelo,
+                help="Selecione um Barro Intermediario no menu acima para liberar."
+            )
         with c6:
-            branco_b = st.number_input("Branco (B)", 0, 10, 2, 1)
+            branco_b = st.number_input(
+                "Branco (B)", 0, 10, 1 if tem_branco else 0, 1, disabled=not tem_branco,
+                help="Selecione um Barro Arenoso no menu acima para liberar."
+            )
 
-        # TRAVA DE SEGURANCA: Zerar conchas de barro "Nenhum"
-        if sel_barro_amarelo == "Nenhum": amarelo_a = amarelo_b = 0
-        if sel_barro_branco == "Nenhum": branco_a = branco_b = 0
+        if not tem_amarelo: amarelo_a = amarelo_b = 0
+        if not tem_branco: branco_a = branco_b = 0
 
         tot_a = max(1, preto_a + amarelo_a + branco_a)
         tot_b = max(1, preto_b + amarelo_b + branco_b)
@@ -741,14 +758,13 @@ with tab_diag:
         pct_preto = ((preto_a / tot_a) + (preto_b / tot_b)) / 2
         pct_amarelo = ((amarelo_a / tot_a) + (amarelo_b / tot_b)) / 2
         pct_branco = ((branco_a / tot_a) + (branco_b / tot_b)) / 2
-        mistura_desc = f"Mesclada ({preto_a}x{branco_a} e {preto_b}x{branco_b})"
+        mistura_desc = f"Mesclada ({preto_a}x{amarelo_a}x{branco_a} e {preto_b}x{amarelo_b}x{branco_b})"
 
     # Obter os residuos puros individuais das jazidas
     rp_p = obter_residuo_puro_barro(sel_barro_preto, st.session_state.catalogo_barros, st.session_state.analises_puro)
     rp_a = obter_residuo_puro_barro(sel_barro_amarelo, st.session_state.catalogo_barros, st.session_state.analises_puro)
     rp_b = obter_residuo_puro_barro(sel_barro_branco, st.session_state.catalogo_barros, st.session_state.analises_puro)
 
-    # Residuos puros ponderados de entrada
     res_puro_ponderado = (pct_preto * rp_p) + (pct_amarelo * rp_a) + (pct_branco * rp_b)
 
     st.caption(
@@ -931,8 +947,10 @@ with tab_reg:
         st.session_state.catalogo_barros["status"] == "Ativo"
     ]
     barros_pretos_reg = df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Preto"]["codigo"].tolist()
-    barros_amarelos_reg = ["Nenhum"] + df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Amarelo"]["codigo"].tolist()
     
+    amarelos_reg_lista = df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Amarelo"]["codigo"].tolist()
+    barros_amarelos_reg = amarelos_reg_lista + ["Nenhum"] if amarelos_reg_lista else ["Nenhum"]
+
     brancos_reg_lista = df_barros_ativos_reg[df_barros_ativos_reg["tipo_base"] == "Branco"]["codigo"].tolist()
     barros_brancos_reg = brancos_reg_lista + ["Nenhum"] if brancos_reg_lista else ["03_BR_AREN_BRANCO_STPRAZ", "Nenhum"]
 
