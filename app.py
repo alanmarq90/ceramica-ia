@@ -542,6 +542,55 @@ def persistir_dados(tipo):
 
 
 # ============================================================
+# HELPERS DE FORMULARIO (NAO ALTERAM A IA)
+# ============================================================
+
+def campos_ok(*valores):
+    return all(v is not None for v in valores)
+
+
+def concha_efetiva(valor, codigo_barro):
+    if str(codigo_barro) == "Nenhum":
+        return 0 if valor is None else valor
+    return valor
+
+
+def to_int(v, padrao=0):
+    try:
+        if v is None or v == "":
+            return padrao
+        return int(float(v))
+    except Exception:
+        return padrao
+
+
+def to_float(v, padrao=0.0):
+    try:
+        if v is None or v == "":
+            return padrao
+        return float(v)
+    except Exception:
+        return padrao
+
+
+def rotulo_lote(idx, row):
+    return (
+        f"{idx} | {row.get('data', '')} | "
+        f"{row.get('modo', '')} | "
+        f"{row.get('tipo_bloco', '')} | "
+        f"Res {row.get('residuo', '')}%"
+    )
+
+
+def rotulo_puro(idx, row):
+    return (
+        f"{idx} | {row.get('data', '')} | "
+        f"{row.get('codigo_barro', '')} | "
+        f"{row.get('pct_residuo_puro', '')}%"
+    )
+
+
+# ============================================================
 # CALCULO CORRETO DAS RECEITAS
 # ============================================================
 
@@ -1489,6 +1538,11 @@ with tab_diag:
         "Composicao em Conchas"
     )
 
+    st.caption(
+        "As caixas iniciam em branco. Preencha os valores da analise. "
+        "Se o barro nao for usado, informe 0."
+    )
+
 
     modo = st.radio(
         "Tipo de Producao do Dia:",
@@ -1500,6 +1554,15 @@ with tab_diag:
     )
 
 
+    composicao_ok = False
+    pct_preto = 0.0
+    pct_amarelo = 0.0
+    pct_branco = 0.0
+    mistura_desc = ""
+    preto_a = amarelo_a = branco_a = None
+    preto_b = amarelo_b = branco_b = None
+
+
     if modo == "Receita Unica":
 
         c1, c2, c3 = st.columns(3)
@@ -1508,56 +1571,66 @@ with tab_diag:
 
             preto_a = st.number_input(
                 "Conchas de Preto",
-                0,
-                10,
-                4,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
         with c2:
 
             amarelo_a = st.number_input(
                 "Conchas de Amarelo",
-                0,
-                10,
-                0 if sel_barro_amarelo == "Nenhum" else 1,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
         with c3:
 
             branco_a = st.number_input(
                 "Conchas de Branco",
-                0,
-                10,
-                1,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
-        preto_b = preto_a
-        amarelo_b = amarelo_a
-        branco_b = branco_a
+        preto_a_eff = concha_efetiva(preto_a, sel_barro_preto)
+        amarelo_a_eff = concha_efetiva(amarelo_a, sel_barro_amarelo)
+        branco_a_eff = concha_efetiva(branco_a, sel_barro_branco)
 
 
-        pct_preto, pct_amarelo, pct_branco = (
-            calcular_percentuais_receita(
-                "Unica",
-                preto_a,
-                amarelo_a,
-                branco_a,
-                preto_b,
-                amarelo_b,
-                branco_b,
+        if campos_ok(preto_a_eff, amarelo_a_eff, branco_a_eff):
+
+            preto_a = preto_a_eff
+            amarelo_a = amarelo_a_eff
+            branco_a = branco_a_eff
+            preto_b = preto_a
+            amarelo_b = amarelo_a
+            branco_b = branco_a
+
+            pct_preto, pct_amarelo, pct_branco = (
+                calcular_percentuais_receita(
+                    "Unica",
+                    preto_a,
+                    amarelo_a,
+                    branco_a,
+                    preto_b,
+                    amarelo_b,
+                    branco_b,
+                )
             )
-        )
 
+            mistura_desc = (
+                f"{preto_a} Preto + "
+                f"{amarelo_a} Amarelo + "
+                f"{branco_a} Branco"
+            )
 
-        mistura_desc = (
-            f"{preto_a} Preto + "
-            f"{amarelo_a} Amarelo + "
-            f"{branco_a} Branco"
-        )
+            composicao_ok = True
 
 
     else:
@@ -1573,10 +1646,10 @@ with tab_diag:
 
             preto_a = st.number_input(
                 "Preto (A)",
-                0,
-                10,
-                3,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
@@ -1584,10 +1657,10 @@ with tab_diag:
 
             amarelo_a = st.number_input(
                 "Amarelo (A)",
-                0,
-                10,
-                1,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
@@ -1595,10 +1668,10 @@ with tab_diag:
 
             branco_a = st.number_input(
                 "Branco (A)",
-                0,
-                10,
-                1,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
@@ -1613,10 +1686,10 @@ with tab_diag:
 
             preto_b = st.number_input(
                 "Preto (B)",
-                0,
-                10,
-                3,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
@@ -1624,10 +1697,10 @@ with tab_diag:
 
             amarelo_b = st.number_input(
                 "Amarelo (B)",
-                0,
-                10,
-                1,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
@@ -1635,43 +1708,77 @@ with tab_diag:
 
             branco_b = st.number_input(
                 "Branco (B)",
-                0,
-                10,
-                2,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
-        pct_preto, pct_amarelo, pct_branco = (
-            calcular_percentuais_receita(
-                "Mesclada",
-                preto_a,
-                amarelo_a,
-                branco_a,
-                preto_b,
-                amarelo_b,
-                branco_b,
+        preto_a_eff = concha_efetiva(preto_a, sel_barro_preto)
+        amarelo_a_eff = concha_efetiva(amarelo_a, sel_barro_amarelo)
+        branco_a_eff = concha_efetiva(branco_a, sel_barro_branco)
+        preto_b_eff = concha_efetiva(preto_b, sel_barro_preto)
+        amarelo_b_eff = concha_efetiva(amarelo_b, sel_barro_amarelo)
+        branco_b_eff = concha_efetiva(branco_b, sel_barro_branco)
+
+
+        if campos_ok(
+            preto_a_eff,
+            amarelo_a_eff,
+            branco_a_eff,
+            preto_b_eff,
+            amarelo_b_eff,
+            branco_b_eff,
+        ):
+
+            preto_a = preto_a_eff
+            amarelo_a = amarelo_a_eff
+            branco_a = branco_a_eff
+            preto_b = preto_b_eff
+            amarelo_b = amarelo_b_eff
+            branco_b = branco_b_eff
+
+            pct_preto, pct_amarelo, pct_branco = (
+                calcular_percentuais_receita(
+                    "Mesclada",
+                    preto_a,
+                    amarelo_a,
+                    branco_a,
+                    preto_b,
+                    amarelo_b,
+                    branco_b,
+                )
             )
+
+            mistura_desc = (
+                f"A({preto_a}/{amarelo_a}/{branco_a}) "
+                f"+ B({preto_b}/{amarelo_b}/{branco_b})"
+            )
+
+            composicao_ok = True
+
+
+    if composicao_ok:
+
+        st.info(
+            f"Composicao real pelas conchas: "
+            f"{pct_preto*100:.2f}% Preto | "
+            f"{pct_amarelo*100:.2f}% Amarelo | "
+            f"{pct_branco*100:.2f}% Branco"
         )
 
-
-        mistura_desc = (
-            f"A({preto_a}/{amarelo_a}/{branco_a}) "
-            f"+ B({preto_b}/{amarelo_b}/{branco_b})"
+        st.caption(
+            "Na mistura Mesclada A,B,A,B, a porcentagem e calculada "
+            "pela soma total das conchas dos dois ciclos."
         )
 
+    else:
 
-    st.info(
-        f"Composicao real pelas conchas: "
-        f"{pct_preto*100:.2f}% Preto | "
-        f"{pct_amarelo*100:.2f}% Amarelo | "
-        f"{pct_branco*100:.2f}% Branco"
-    )
-
-    st.caption(
-        "Na mistura Mesclada A,B,A,B, a porcentagem e calculada "
-        "pela soma total das conchas dos dois ciclos."
-    )
+        st.warning(
+            "Preencha as conchas para calcular a composicao. "
+            "Se o barro nao for usado, informe 0."
+        )
 
 
     st.divider()
@@ -1687,10 +1794,10 @@ with tab_diag:
 
         umidade = st.number_input(
             "Umidade da Massa na Maromba (%)",
-            5.0,
-            30.0,
-            16.0,
-            0.5,
+            min_value=5.0,
+            max_value=30.0,
+            value=None,
+            step=0.5,
         )
 
 
@@ -1698,10 +1805,10 @@ with tab_diag:
 
         esp_parede = st.number_input(
             "Espessura da Parede (cm)",
-            0.20,
-            1.50,
-            0.65,
-            0.01,
+            min_value=0.20,
+            max_value=1.50,
+            value=None,
+            step=0.01,
         )
 
 
@@ -1709,11 +1816,18 @@ with tab_diag:
 
         comprimento_cm = st.number_input(
             "Comprimento Verde de Corte na Extrusora (cm):",
-            15.0,
-            45.0,
-            float(comp_seco_ideal),
-            0.1,
+            min_value=15.0,
+            max_value=45.0,
+            value=None,
+            step=0.1,
         )
+
+
+    parametros_ok = campos_ok(
+        umidade,
+        esp_parede,
+        comprimento_cm,
+    )
 
 
     st.divider()
@@ -1725,10 +1839,36 @@ with tab_diag:
         use_container_width=True,
     ):
 
-        st.session_state.diagnostico_gerado = True
+        if composicao_ok and parametros_ok:
+
+            st.session_state.diagnostico_gerado = True
+
+        else:
+
+            st.session_state.diagnostico_gerado = False
+
+            st.error(
+                "Preencha todos os campos (conchas, umidade, "
+                "parede e comprimento) antes de gerar o diagnostico."
+            )
 
 
-    if st.session_state.diagnostico_gerado:
+    pode_diagnosticar = (
+        st.session_state.diagnostico_gerado
+        and composicao_ok
+        and parametros_ok
+    )
+
+
+    if st.session_state.diagnostico_gerado and not pode_diagnosticar:
+
+        st.warning(
+            "Preencha conchas, umidade, parede e comprimento "
+            "para gerar o diagnostico."
+        )
+
+
+    if pode_diagnosticar:
 
 
         (
@@ -2015,10 +2155,10 @@ with tab_diag:
 
                 prod_dia = st.number_input(
                     "Producao Planejada do Dia (blocos):",
-                    1000,
-                    200000,
-                    50000,
-                    5000,
+                    min_value=1000,
+                    max_value=200000,
+                    value=None,
+                    step=5000,
                 )
 
 
@@ -2026,42 +2166,51 @@ with tab_diag:
 
                 custo_barro = st.number_input(
                     "Custo da Tonelada do Barro (R$/ton):",
-                    10.0,
-                    200.0,
-                    50.0,
-                    5.0,
+                    min_value=10.0,
+                    max_value=200.0,
+                    value=None,
+                    step=5.0,
                 )
 
 
-            ton_perdidas_dia = (
-                excesso_g
-                / 1000
-                * prod_dia
-                / 1000
-            )
+            if campos_ok(prod_dia, custo_barro):
 
-            prejuizo_dia = (
-                ton_perdidas_dia
-                * custo_barro
-            )
+                ton_perdidas_dia = (
+                    excesso_g
+                    / 1000
+                    * prod_dia
+                    / 1000
+                )
 
-            prejuizo_mes = (
-                prejuizo_dia
-                * 25
-            )
+                prejuizo_dia = (
+                    ton_perdidas_dia
+                    * custo_barro
+                )
 
-
-            st.error(
-                f"Desperdicio estimado: "
-                f"{ton_perdidas_dia:.2f} toneladas/dia\n\n"
-                f"Prejuizo diario: R$ {prejuizo_dia:,.2f}\n\n"
-                f"Impacto mensal: R$ {prejuizo_mes:,.2f}"
-            )
+                prejuizo_mes = (
+                    prejuizo_dia
+                    * 25
+                )
 
 
-            texto_fin_wa = (
-                f"\nPerda: {ton_perdidas_dia:.2f} ton/dia"
-            )
+                st.error(
+                    f"Desperdicio estimado: "
+                    f"{ton_perdidas_dia:.2f} toneladas/dia\n\n"
+                    f"Prejuizo diario: R$ {prejuizo_dia:,.2f}\n\n"
+                    f"Impacto mensal: R$ {prejuizo_mes:,.2f}"
+                )
+
+
+                texto_fin_wa = (
+                    f"\nPerda: {ton_perdidas_dia:.2f} ton/dia"
+                )
+
+            else:
+
+                st.info(
+                    "Preencha producao e custo para calcular "
+                    "o impacto financeiro."
+                )
 
 
         st.divider()
@@ -2113,7 +2262,7 @@ with tab_reg:
 
     st.caption(
         "Cada novo resultado passa a fazer parte do aprendizado "
-        "da IA de residuo."
+        "da IA de residuo. As caixas iniciam em branco."
     )
 
 
@@ -2192,10 +2341,6 @@ with tab_reg:
             produto_row["codigo"]
         )
 
-        comp_sugerido = float(
-            produto_row["comp_seco_ideal"]
-        )
-
         peso_meta = float(
             produto_row["peso_padrao"]
         )
@@ -2234,6 +2379,10 @@ with tab_reg:
             "2. Quantidade de Conchas"
         )
 
+        st.caption(
+            "Se o barro nao for usado, informe 0."
+        )
+
 
         ca, cb = st.columns(2)
 
@@ -2246,23 +2395,26 @@ with tab_reg:
 
             p_a = st.number_input(
                 "Preto A",
-                0,
-                10,
-                4,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
             a_a = st.number_input(
                 "Amarelo A",
-                0,
-                10,
-                0,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
             b_a = st.number_input(
                 "Branco A",
-                0,
-                10,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
@@ -2274,23 +2426,26 @@ with tab_reg:
 
             p_b = st.number_input(
                 "Preto B",
-                0,
-                10,
-                4,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
             a_b = st.number_input(
                 "Amarelo B",
-                0,
-                10,
-                0,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
             b_b = st.number_input(
                 "Branco B",
-                0,
-                10,
-                1,
+                min_value=0,
+                max_value=10,
+                value=None,
+                step=1,
             )
 
 
@@ -2306,10 +2461,10 @@ with tab_reg:
 
             umidade_real = st.number_input(
                 "Umidade Real (%)",
-                0.0,
-                40.0,
-                16.0,
-                0.1,
+                min_value=0.0,
+                max_value=40.0,
+                value=None,
+                step=0.1,
             )
 
 
@@ -2317,10 +2472,10 @@ with tab_reg:
 
             residuo_real = st.number_input(
                 "Residuo Real (%)",
-                0.0,
-                60.0,
-                30.0,
-                0.1,
+                min_value=0.0,
+                max_value=60.0,
+                value=None,
+                step=0.1,
             )
 
 
@@ -2328,10 +2483,10 @@ with tab_reg:
 
             retracao_real = st.number_input(
                 "Retracao Real (%)",
-                0.0,
-                10.0,
-                3.0,
-                0.1,
+                min_value=0.0,
+                max_value=10.0,
+                value=None,
+                step=0.1,
             )
 
 
@@ -2339,10 +2494,10 @@ with tab_reg:
 
             esp_real = st.number_input(
                 "Espessura Parede (cm)",
-                0.0,
-                2.0,
-                0.65,
-                0.01,
+                min_value=0.0,
+                max_value=2.0,
+                value=None,
+                step=0.01,
             )
 
 
@@ -2353,10 +2508,10 @@ with tab_reg:
 
             comp_real = st.number_input(
                 "Comprimento Verde (cm)",
-                10.0,
-                50.0,
-                comp_sugerido,
-                0.1,
+                min_value=10.0,
+                max_value=50.0,
+                value=None,
+                step=0.1,
             )
 
 
@@ -2364,10 +2519,11 @@ with tab_reg:
 
             peso_real = st.number_input(
                 "Peso Real (kg)",
-                0.0,
-                15.0,
-                2.800,
-                0.001,
+                min_value=0.0,
+                max_value=15.0,
+                value=None,
+                step=0.001,
+                format="%.3f",
             )
 
 
@@ -2375,7 +2531,7 @@ with tab_reg:
 
             obs = st.text_area(
                 "Observacoes:",
-                "Teste de rotina",
+                value="",
             )
 
 
@@ -2388,174 +2544,220 @@ with tab_reg:
 
     if salvar_lote:
 
+        p_a_s = concha_efetiva(p_a, cod_p_reg)
+        a_a_s = concha_efetiva(a_a, cod_a_reg)
+        b_a_s = concha_efetiva(b_a, cod_b_reg)
+        p_b_s = concha_efetiva(p_b, cod_p_reg)
+        a_b_s = concha_efetiva(a_b, cod_a_reg)
+        b_b_s = concha_efetiva(b_b, cod_b_reg)
 
-        if modo_lote == "Unica":
 
-            p_b_salvar = p_a
-            a_b_salvar = a_a
-            b_b_salvar = b_a
+        obrigatorios = [
+            p_a_s,
+            a_a_s,
+            b_a_s,
+            umidade_real,
+            residuo_real,
+            retracao_real,
+            esp_real,
+            comp_real,
+            peso_real,
+        ]
+
+        if modo_lote == "Mesclada":
+            obrigatorios.extend(
+                [
+                    p_b_s,
+                    a_b_s,
+                    b_b_s,
+                ]
+            )
+
+
+        if not campos_ok(*obrigatorios):
+
+            st.error(
+                "Preencha todos os campos numericos antes de salvar. "
+                "Se o barro nao for usado, informe 0."
+            )
 
         else:
 
-            p_b_salvar = p_b
-            a_b_salvar = a_b
-            b_b_salvar = b_b
+            p_a = p_a_s
+            a_a = a_a_s
+            b_a = b_a_s
+            p_b = p_b_s
+            a_b = a_b_s
+            b_b = b_b_s
 
 
-        (
-            pct_p,
-            pct_a,
-            pct_b,
-        ) = calcular_percentuais_receita(
-            modo_lote,
-            p_a,
-            a_a,
-            b_a,
-            p_b_salvar,
-            a_b_salvar,
-            b_b_salvar,
-        )
+            if modo_lote == "Unica":
+
+                p_b_salvar = p_a
+                a_b_salvar = a_a
+                b_b_salvar = b_a
+
+            else:
+
+                p_b_salvar = p_b
+                a_b_salvar = a_b
+                b_b_salvar = b_b
 
 
-        # Previsao ANTES de ensinar o novo resultado
-
-        (
-            previsao_antes,
-            _,
-            _,
-            confianca_antes,
-            _,
-        ) = prever_residuo_inteligente(
-            m_res,
-            df_treino_ia,
-            pct_a,
-            pct_b,
-            umidade_real,
-        )
-
-
-        class_res = (
-            "fraco"
-            if residuo_real > 32
-            else (
-                "forte"
-                if residuo_real < 28
-                else "ideal"
-            )
-        )
-
-
-        excesso = (
-            peso_real - peso_meta
-        ) * 1000
-
-
-        novo_row = {
-            "data": data_lote.strftime(
-                "%Y-%m-%d"
-            ),
-            "modo": modo_lote,
-            "cod_barro_preto": cod_p_reg,
-            "cod_barro_amarelo": cod_a_reg,
-            "cod_barro_branco": cod_b_reg,
-            "preto_a": p_a,
-            "amarelo_a": a_a,
-            "branco_a": b_a,
-            "preto_b": p_b_salvar,
-            "amarelo_b": a_b_salvar,
-            "branco_b": b_b_salvar,
-            "pct_preto": round(
+            (
                 pct_p,
-                4,
-            ),
-            "pct_amarelo": round(
                 pct_a,
-                4,
-            ),
-            "pct_branco": round(
                 pct_b,
-                4,
-            ),
-            "umidade": umidade_real,
-            "residuo": residuo_real,
-            "retracao": retracao_real,
-            "esp_parede": esp_real,
-            "peso": peso_real,
-            "comprimento": comp_real,
-            "tipo_bloco": codigo_selecionado,
-            "class_residuo": class_res,
-            "excesso_peso": round(
-                excesso,
-                0,
-            ),
-            "observacoes": obs,
-        }
+            ) = calcular_percentuais_receita(
+                modo_lote,
+                p_a,
+                a_a,
+                b_a,
+                p_b_salvar,
+                a_b_salvar,
+                b_b_salvar,
+            )
 
 
-        st.session_state.df_master = pd.concat(
-            [
-                pd.DataFrame(
-                    [novo_row]
+            # Previsao ANTES de ensinar o novo resultado
+
+            (
+                previsao_antes,
+                _,
+                _,
+                confianca_antes,
+                _,
+            ) = prever_residuo_inteligente(
+                m_res,
+                df_treino_ia,
+                pct_a,
+                pct_b,
+                umidade_real,
+            )
+
+
+            class_res = (
+                "fraco"
+                if residuo_real > 32
+                else (
+                    "forte"
+                    if residuo_real < 28
+                    else "ideal"
+                )
+            )
+
+
+            excesso = (
+                peso_real - peso_meta
+            ) * 1000
+
+
+            novo_row = {
+                "data": data_lote.strftime(
+                    "%Y-%m-%d"
                 ),
-                st.session_state.df_master,
-            ],
-            ignore_index=True,
-        )
+                "modo": modo_lote,
+                "cod_barro_preto": cod_p_reg,
+                "cod_barro_amarelo": cod_a_reg,
+                "cod_barro_branco": cod_b_reg,
+                "preto_a": p_a,
+                "amarelo_a": a_a,
+                "branco_a": b_a,
+                "preto_b": p_b_salvar,
+                "amarelo_b": a_b_salvar,
+                "branco_b": b_b_salvar,
+                "pct_preto": round(
+                    pct_p,
+                    4,
+                ),
+                "pct_amarelo": round(
+                    pct_a,
+                    4,
+                ),
+                "pct_branco": round(
+                    pct_b,
+                    4,
+                ),
+                "umidade": umidade_real,
+                "residuo": residuo_real,
+                "retracao": retracao_real,
+                "esp_parede": esp_real,
+                "peso": peso_real,
+                "comprimento": comp_real,
+                "tipo_bloco": codigo_selecionado,
+                "class_residuo": class_res,
+                "excesso_peso": round(
+                    excesso,
+                    0,
+                ),
+                "observacoes": obs,
+            }
 
 
-        persistir_dados(
-            "lotes"
-        )
-
-
-        erro = abs(
-            residuo_real
-            - previsao_antes
-        )
-
-
-        st.success(
-            "Lote salvo. O resultado real entrou no banco "
-            "e sera usado no proximo treinamento da IA."
-        )
-
-
-        st.subheader(
-            "Previsao x Resultado Real"
-        )
-
-
-        cc1, cc2, cc3 = st.columns(3)
-
-
-        with cc1:
-
-            st.metric(
-                "Previsao antes da analise",
-                f"{previsao_antes:.1f}%",
+            st.session_state.df_master = pd.concat(
+                [
+                    pd.DataFrame(
+                        [novo_row]
+                    ),
+                    st.session_state.df_master,
+                ],
+                ignore_index=True,
             )
 
 
-        with cc2:
-
-            st.metric(
-                "Resultado Real",
-                f"{residuo_real:.1f}%",
+            persistir_dados(
+                "lotes"
             )
 
 
-        with cc3:
-
-            st.metric(
-                "Erro",
-                f"{erro:.1f} ponto(s) %",
+            erro = abs(
+                residuo_real
+                - previsao_antes
             )
 
 
-        st.caption(
-            f"Confianca que a IA tinha antes de conhecer "
-            f"este resultado: {confianca_antes}"
-        )
+            st.success(
+                "Lote salvo. O resultado real entrou no banco "
+                "e sera usado no proximo treinamento da IA."
+            )
+
+
+            st.subheader(
+                "Previsao x Resultado Real"
+            )
+
+
+            cc1, cc2, cc3 = st.columns(3)
+
+
+            with cc1:
+
+                st.metric(
+                    "Previsao antes da analise",
+                    f"{previsao_antes:.1f}%",
+                )
+
+
+            with cc2:
+
+                st.metric(
+                    "Resultado Real",
+                    f"{residuo_real:.1f}%",
+                )
+
+
+            with cc3:
+
+                st.metric(
+                    "Erro",
+                    f"{erro:.1f} ponto(s) %",
+                )
+
+
+            st.caption(
+                f"Confianca que a IA tinha antes de conhecer "
+                f"este resultado: {confianca_antes}"
+            )
 
 
     st.divider()
@@ -2593,6 +2795,413 @@ with tab_reg:
         mime="text/csv",
         use_container_width=True,
     )
+
+
+    st.divider()
+
+    st.subheader(
+        "Editar ou Excluir Analise de Mistura"
+    )
+
+
+    df_lotes_edit = st.session_state.df_master
+
+    if len(df_lotes_edit) == 0:
+
+        st.info(
+            "Nenhum lote cadastrado para editar."
+        )
+
+    else:
+
+        opcoes_lote = [
+            rotulo_lote(i, row)
+            for i, row in df_lotes_edit.iterrows()
+        ]
+
+        sel_lote_lbl = st.selectbox(
+            "Selecione o lote:",
+            opcoes_lote,
+            key="sel_editar_lote",
+        )
+
+        idx_lote = int(
+            str(sel_lote_lbl).split(" | ")[0]
+        )
+
+        atual_lote = df_lotes_edit.loc[idx_lote]
+
+
+        with st.form(
+            "form_editar_lote"
+        ):
+
+            e1, e2, e3 = st.columns(3)
+
+            with e1:
+
+                edit_data_lote = st.text_input(
+                    "Data (YYYY-MM-DD):",
+                    value=str(
+                        atual_lote.get("data", "")
+                    ),
+                )
+
+                chaves_prod = produtos_reg[
+                    "chave_comercial"
+                ].tolist()
+
+                cod_atual_prod = str(
+                    atual_lote.get("tipo_bloco", "")
+                )
+
+                idx_prod = 0
+
+                for i, chave in enumerate(chaves_prod):
+
+                    if produtos_reg.iloc[i]["codigo"] == cod_atual_prod:
+                        idx_prod = i
+                        break
+
+                edit_prod_lote = st.selectbox(
+                    "Produto:",
+                    chaves_prod,
+                    index=idx_prod,
+                )
+
+            with e2:
+
+                pretos_edit = pretos_reg[:]
+                amarelos_edit = amarelos_reg[:]
+                brancos_edit = brancos_reg[:]
+
+                if str(atual_lote.get("cod_barro_preto", "")) not in pretos_edit:
+                    pretos_edit = [
+                        str(atual_lote.get("cod_barro_preto", ""))
+                    ] + pretos_edit
+
+                if str(atual_lote.get("cod_barro_amarelo", "")) not in amarelos_edit:
+                    amarelos_edit = [
+                        str(atual_lote.get("cod_barro_amarelo", ""))
+                    ] + amarelos_edit
+
+                if str(atual_lote.get("cod_barro_branco", "")) not in brancos_edit:
+                    brancos_edit = [
+                        str(atual_lote.get("cod_barro_branco", ""))
+                    ] + brancos_edit
+
+                edit_cod_p = st.selectbox(
+                    "Barro Preto:",
+                    pretos_edit,
+                    index=(
+                        pretos_edit.index(
+                            str(atual_lote.get("cod_barro_preto", ""))
+                        )
+                        if str(atual_lote.get("cod_barro_preto", "")) in pretos_edit
+                        else 0
+                    ),
+                )
+
+                edit_cod_a = st.selectbox(
+                    "Barro Amarelo:",
+                    amarelos_edit,
+                    index=(
+                        amarelos_edit.index(
+                            str(atual_lote.get("cod_barro_amarelo", ""))
+                        )
+                        if str(atual_lote.get("cod_barro_amarelo", "")) in amarelos_edit
+                        else 0
+                    ),
+                )
+
+                edit_cod_b = st.selectbox(
+                    "Barro Branco:",
+                    brancos_edit,
+                    index=(
+                        brancos_edit.index(
+                            str(atual_lote.get("cod_barro_branco", ""))
+                        )
+                        if str(atual_lote.get("cod_barro_branco", "")) in brancos_edit
+                        else 0
+                    ),
+                )
+
+            with e3:
+
+                modos_lote = [
+                    "Unica",
+                    "Mesclada",
+                ]
+
+                modo_atual = str(
+                    atual_lote.get("modo", "Unica")
+                )
+
+                edit_modo = st.selectbox(
+                    "Tipo de Producao:",
+                    modos_lote,
+                    index=(
+                        modos_lote.index(modo_atual)
+                        if modo_atual in modos_lote
+                        else 0
+                    ),
+                )
+
+
+            f1, f2 = st.columns(2)
+
+            with f1:
+
+                st.caption("Receita A")
+
+                edit_p_a = st.number_input(
+                    "Preto A",
+                    min_value=0,
+                    max_value=10,
+                    value=to_int(atual_lote.get("preto_a", 0)),
+                    step=1,
+                )
+
+                edit_a_a = st.number_input(
+                    "Amarelo A",
+                    min_value=0,
+                    max_value=10,
+                    value=to_int(atual_lote.get("amarelo_a", 0)),
+                    step=1,
+                )
+
+                edit_b_a = st.number_input(
+                    "Branco A",
+                    min_value=0,
+                    max_value=10,
+                    value=to_int(atual_lote.get("branco_a", 0)),
+                    step=1,
+                )
+
+            with f2:
+
+                st.caption("Receita B")
+
+                edit_p_b = st.number_input(
+                    "Preto B",
+                    min_value=0,
+                    max_value=10,
+                    value=to_int(atual_lote.get("preto_b", 0)),
+                    step=1,
+                )
+
+                edit_a_b = st.number_input(
+                    "Amarelo B",
+                    min_value=0,
+                    max_value=10,
+                    value=to_int(atual_lote.get("amarelo_b", 0)),
+                    step=1,
+                )
+
+                edit_b_b = st.number_input(
+                    "Branco B",
+                    min_value=0,
+                    max_value=10,
+                    value=to_int(atual_lote.get("branco_b", 0)),
+                    step=1,
+                )
+
+
+            g1, g2, g3, g4 = st.columns(4)
+
+            with g1:
+
+                edit_umidade = st.number_input(
+                    "Umidade (%)",
+                    min_value=0.0,
+                    max_value=40.0,
+                    value=to_float(atual_lote.get("umidade", 0.0)),
+                    step=0.1,
+                )
+
+            with g2:
+
+                edit_residuo = st.number_input(
+                    "Residuo (%)",
+                    min_value=0.0,
+                    max_value=60.0,
+                    value=to_float(atual_lote.get("residuo", 0.0)),
+                    step=0.1,
+                )
+
+            with g3:
+
+                edit_retracao = st.number_input(
+                    "Retracao (%)",
+                    min_value=0.0,
+                    max_value=10.0,
+                    value=to_float(atual_lote.get("retracao", 0.0)),
+                    step=0.1,
+                )
+
+            with g4:
+
+                edit_esp = st.number_input(
+                    "Parede (cm)",
+                    min_value=0.0,
+                    max_value=2.0,
+                    value=to_float(atual_lote.get("esp_parede", 0.0)),
+                    step=0.01,
+                )
+
+
+            h1, h2, h3 = st.columns(3)
+
+            with h1:
+
+                edit_comp = st.number_input(
+                    "Comprimento (cm)",
+                    min_value=10.0,
+                    max_value=50.0,
+                    value=to_float(atual_lote.get("comprimento", 20.0)),
+                    step=0.1,
+                )
+
+            with h2:
+
+                edit_peso = st.number_input(
+                    "Peso (kg)",
+                    min_value=0.0,
+                    max_value=15.0,
+                    value=to_float(atual_lote.get("peso", 0.0)),
+                    step=0.001,
+                    format="%.3f",
+                )
+
+            with h3:
+
+                edit_obs = st.text_area(
+                    "Observacoes:",
+                    value=str(
+                        atual_lote.get("observacoes", "") or ""
+                    ),
+                )
+
+
+            salvar_edit_lote = st.form_submit_button(
+                "Salvar Alteracoes do Lote",
+                type="primary",
+                use_container_width=True,
+            )
+
+
+        if salvar_edit_lote:
+
+            if edit_modo == "Unica":
+
+                p_b_salvar = edit_p_a
+                a_b_salvar = edit_a_a
+                b_b_salvar = edit_b_a
+
+            else:
+
+                p_b_salvar = edit_p_b
+                a_b_salvar = edit_a_b
+                b_b_salvar = edit_b_b
+
+
+            pct_p, pct_a, pct_b = calcular_percentuais_receita(
+                edit_modo,
+                edit_p_a,
+                edit_a_a,
+                edit_b_a,
+                p_b_salvar,
+                a_b_salvar,
+                b_b_salvar,
+            )
+
+
+            prod_row_edit = produtos_reg[
+                produtos_reg["chave_comercial"]
+                == edit_prod_lote
+            ].iloc[0]
+
+            codigo_edit = prod_row_edit["codigo"]
+            peso_meta_edit = float(
+                prod_row_edit["peso_padrao"]
+            )
+
+
+            class_res = (
+                "fraco"
+                if edit_residuo > 32
+                else (
+                    "forte"
+                    if edit_residuo < 28
+                    else "ideal"
+                )
+            )
+
+            excesso = (
+                edit_peso - peso_meta_edit
+            ) * 1000
+
+
+            st.session_state.df_master.at[idx_lote, "data"] = edit_data_lote.strip()
+            st.session_state.df_master.at[idx_lote, "modo"] = edit_modo
+            st.session_state.df_master.at[idx_lote, "cod_barro_preto"] = edit_cod_p
+            st.session_state.df_master.at[idx_lote, "cod_barro_amarelo"] = edit_cod_a
+            st.session_state.df_master.at[idx_lote, "cod_barro_branco"] = edit_cod_b
+            st.session_state.df_master.at[idx_lote, "preto_a"] = edit_p_a
+            st.session_state.df_master.at[idx_lote, "amarelo_a"] = edit_a_a
+            st.session_state.df_master.at[idx_lote, "branco_a"] = edit_b_a
+            st.session_state.df_master.at[idx_lote, "preto_b"] = p_b_salvar
+            st.session_state.df_master.at[idx_lote, "amarelo_b"] = a_b_salvar
+            st.session_state.df_master.at[idx_lote, "branco_b"] = b_b_salvar
+            st.session_state.df_master.at[idx_lote, "pct_preto"] = round(pct_p, 4)
+            st.session_state.df_master.at[idx_lote, "pct_amarelo"] = round(pct_a, 4)
+            st.session_state.df_master.at[idx_lote, "pct_branco"] = round(pct_b, 4)
+            st.session_state.df_master.at[idx_lote, "umidade"] = edit_umidade
+            st.session_state.df_master.at[idx_lote, "residuo"] = edit_residuo
+            st.session_state.df_master.at[idx_lote, "retracao"] = edit_retracao
+            st.session_state.df_master.at[idx_lote, "esp_parede"] = edit_esp
+            st.session_state.df_master.at[idx_lote, "peso"] = edit_peso
+            st.session_state.df_master.at[idx_lote, "comprimento"] = edit_comp
+            st.session_state.df_master.at[idx_lote, "tipo_bloco"] = codigo_edit
+            st.session_state.df_master.at[idx_lote, "class_residuo"] = class_res
+            st.session_state.df_master.at[idx_lote, "excesso_peso"] = round(excesso, 0)
+            st.session_state.df_master.at[idx_lote, "observacoes"] = edit_obs
+
+
+            persistir_dados("lotes")
+
+            st.success("Lote atualizado.")
+            st.rerun()
+
+
+        confirma_exc_lote = st.checkbox(
+            "Confirmar exclusao deste lote",
+            key=f"conf_exc_lote_{idx_lote}",
+        )
+
+        if st.button(
+            "Excluir Lote Selecionado",
+            key=f"btn_exc_lote_{idx_lote}",
+        ):
+
+            if not confirma_exc_lote:
+
+                st.error(
+                    "Marque a caixa para confirmar a exclusao."
+                )
+
+            else:
+
+                st.session_state.df_master = (
+                    st.session_state.df_master
+                    .drop(index=idx_lote)
+                    .reset_index(drop=True)
+                )
+
+                persistir_dados("lotes")
+
+                st.success("Lote excluido.")
+                st.rerun()
 
 
 # ============================================================
@@ -2650,36 +3259,45 @@ with tab_puro:
 
             peso_amostra = st.number_input(
                 "Peso da Amostra Seca (g)",
-                1.0,
-                5000.0,
-                100.0,
-                1.0,
+                min_value=1.0,
+                max_value=5000.0,
+                value=None,
+                step=1.0,
             )
 
             peso_residuo = st.number_input(
                 "Peso do Residuo Seco (g)",
-                0.0,
-                5000.0,
-                30.0,
-                1.0,
+                min_value=0.0,
+                max_value=5000.0,
+                value=None,
+                step=1.0,
             )
 
 
-            pct_puro = (
-                peso_residuo
-                / peso_amostra
-                * 100
-            )
+            if campos_ok(peso_amostra, peso_residuo) and peso_amostra > 0:
 
+                pct_puro = (
+                    peso_residuo
+                    / peso_amostra
+                    * 100
+                )
 
-            st.info(
-                f"Residuo Puro: {pct_puro:.2f}%"
-            )
+                st.info(
+                    f"Residuo Puro: {pct_puro:.2f}%"
+                )
+
+            else:
+
+                pct_puro = None
+
+                st.caption(
+                    "Preencha os pesos para calcular o residuo puro."
+                )
 
 
             obs_puro = st.text_area(
                 "Observacoes:",
-                "Amostra de recebimento",
+                value="",
             )
 
 
@@ -2692,38 +3310,55 @@ with tab_puro:
 
         if salvar_puro:
 
-            novo = {
-                "data": data_puro.strftime(
-                    "%Y-%m-%d"
-                ),
-                "codigo_barro": cod_puro,
-                "peso_amostra_g": peso_amostra,
-                "peso_residuo_g": peso_residuo,
-                "pct_residuo_puro": round(
-                    pct_puro,
-                    2,
-                ),
-                "observacoes": obs_puro,
-            }
+            if (
+                not campos_ok(peso_amostra, peso_residuo)
+                or peso_amostra <= 0
+            ):
+
+                st.error(
+                    "Preencha peso da amostra e peso do residuo."
+                )
+
+            else:
+
+                pct_puro = (
+                    peso_residuo
+                    / peso_amostra
+                    * 100
+                )
+
+                novo = {
+                    "data": data_puro.strftime(
+                        "%Y-%m-%d"
+                    ),
+                    "codigo_barro": cod_puro,
+                    "peso_amostra_g": peso_amostra,
+                    "peso_residuo_g": peso_residuo,
+                    "pct_residuo_puro": round(
+                        pct_puro,
+                        2,
+                    ),
+                    "observacoes": obs_puro,
+                }
 
 
-            st.session_state.analises_puro = pd.concat(
-                [
-                    pd.DataFrame([novo]),
-                    st.session_state.analises_puro,
-                ],
-                ignore_index=True,
-            )
+                st.session_state.analises_puro = pd.concat(
+                    [
+                        pd.DataFrame([novo]),
+                        st.session_state.analises_puro,
+                    ],
+                    ignore_index=True,
+                )
 
 
-            persistir_dados(
-                "puro"
-            )
+                persistir_dados(
+                    "puro"
+                )
 
 
-            st.success(
-                "Analise de barro puro salva."
-            )
+                st.success(
+                    "Analise de barro puro salva."
+                )
 
 
     with p2:
@@ -2747,6 +3382,201 @@ with tab_puro:
             st.info(
                 "Ainda nao existem analises de barro puro."
             )
+
+
+    st.divider()
+
+    st.subheader(
+        "Editar ou Excluir Analise de Barro Puro"
+    )
+
+
+    df_puro_edit = st.session_state.analises_puro
+
+    if len(df_puro_edit) == 0:
+
+        st.info(
+            "Nenhuma analise de barro puro para editar."
+        )
+
+    else:
+
+        opcoes_puro = [
+            rotulo_puro(i, row)
+            for i, row in df_puro_edit.iterrows()
+        ]
+
+        sel_puro_lbl = st.selectbox(
+            "Selecione a analise:",
+            opcoes_puro,
+            key="sel_editar_puro",
+        )
+
+        idx_puro = int(
+            str(sel_puro_lbl).split(" | ")[0]
+        )
+
+        atual_puro = df_puro_edit.loc[idx_puro]
+
+
+        lista_edit_puro = lista_barros_puro[:]
+
+        if str(atual_puro.get("codigo_barro", "")) not in lista_edit_puro:
+
+            lista_edit_puro = [
+                str(atual_puro.get("codigo_barro", ""))
+            ] + lista_edit_puro
+
+
+        with st.form(
+            "form_editar_puro"
+        ):
+
+            edit_data_puro = st.text_input(
+                "Data (YYYY-MM-DD):",
+                value=str(
+                    atual_puro.get("data", "")
+                ),
+            )
+
+            edit_cod_puro = st.selectbox(
+                "Barro:",
+                lista_edit_puro,
+                index=(
+                    lista_edit_puro.index(
+                        str(atual_puro.get("codigo_barro", ""))
+                    )
+                    if str(atual_puro.get("codigo_barro", "")) in lista_edit_puro
+                    else 0
+                ),
+            )
+
+            edit_peso_amostra = st.number_input(
+                "Peso da Amostra Seca (g)",
+                min_value=1.0,
+                max_value=5000.0,
+                value=to_float(
+                    atual_puro.get("peso_amostra_g", 1.0),
+                    1.0,
+                ),
+                step=1.0,
+            )
+
+            edit_peso_residuo = st.number_input(
+                "Peso do Residuo Seco (g)",
+                min_value=0.0,
+                max_value=5000.0,
+                value=to_float(
+                    atual_puro.get("peso_residuo_g", 0.0)
+                ),
+                step=1.0,
+            )
+
+            if edit_peso_amostra > 0:
+
+                edit_pct_puro = (
+                    edit_peso_residuo
+                    / edit_peso_amostra
+                    * 100
+                )
+
+                st.info(
+                    f"Residuo Puro: {edit_pct_puro:.2f}%"
+                )
+
+            else:
+
+                edit_pct_puro = 0.0
+
+            edit_obs_puro = st.text_area(
+                "Observacoes:",
+                value=str(
+                    atual_puro.get("observacoes", "") or ""
+                ),
+            )
+
+            salvar_edit_puro = st.form_submit_button(
+                "Salvar Alteracoes da Analise",
+                type="primary",
+                use_container_width=True,
+            )
+
+
+        if salvar_edit_puro:
+
+            if edit_peso_amostra <= 0:
+
+                st.error(
+                    "Peso da amostra deve ser maior que zero."
+                )
+
+            else:
+
+                pct_calc = (
+                    edit_peso_residuo
+                    / edit_peso_amostra
+                    * 100
+                )
+
+                st.session_state.analises_puro.at[
+                    idx_puro, "data"
+                ] = edit_data_puro.strip()
+
+                st.session_state.analises_puro.at[
+                    idx_puro, "codigo_barro"
+                ] = edit_cod_puro
+
+                st.session_state.analises_puro.at[
+                    idx_puro, "peso_amostra_g"
+                ] = edit_peso_amostra
+
+                st.session_state.analises_puro.at[
+                    idx_puro, "peso_residuo_g"
+                ] = edit_peso_residuo
+
+                st.session_state.analises_puro.at[
+                    idx_puro, "pct_residuo_puro"
+                ] = round(pct_calc, 2)
+
+                st.session_state.analises_puro.at[
+                    idx_puro, "observacoes"
+                ] = edit_obs_puro
+
+
+                persistir_dados("puro")
+
+                st.success("Analise de barro puro atualizada.")
+                st.rerun()
+
+
+        confirma_exc_puro = st.checkbox(
+            "Confirmar exclusao desta analise",
+            key=f"conf_exc_puro_{idx_puro}",
+        )
+
+        if st.button(
+            "Excluir Analise Selecionada",
+            key=f"btn_exc_puro_{idx_puro}",
+        ):
+
+            if not confirma_exc_puro:
+
+                st.error(
+                    "Marque a caixa para confirmar a exclusao."
+                )
+
+            else:
+
+                st.session_state.analises_puro = (
+                    st.session_state.analises_puro
+                    .drop(index=idx_puro)
+                    .reset_index(drop=True)
+                )
+
+                persistir_dados("puro")
+
+                st.success("Analise de barro puro excluida.")
+                st.rerun()
 
 
 # ============================================================
@@ -2798,10 +3628,10 @@ with tab_barros:
 
             novo_res_puro = st.number_input(
                 "Residuo Puro de Referencia (%)",
-                0.0,
-                100.0,
-                0.0,
-                0.1,
+                min_value=0.0,
+                max_value=100.0,
+                value=None,
+                step=0.1,
                 help=(
                     "Somente cadastro e acompanhamento. "
                     "Nao influencia a IA de residuo."
@@ -2841,7 +3671,11 @@ with tab_barros:
                     "nome": novo_nome.strip(),
                     "tipo_base": novo_tipo,
                     "localidade": nova_loc.strip(),
-                    "residuo_puro": novo_res_puro,
+                    "residuo_puro": (
+                        novo_res_puro
+                        if novo_res_puro is not None
+                        else 0.0
+                    ),
                     "status": "Ativo",
                 }
 
@@ -2869,7 +3703,7 @@ with tab_barros:
     with c2:
 
         st.subheader(
-            "Editar Barro"
+            "Editar / Excluir Barro"
         )
 
 
@@ -2954,10 +3788,10 @@ with tab_barros:
 
                 edit_rp = st.number_input(
                     "Residuo Puro (%)",
-                    0.0,
-                    100.0,
-                    rp_atual,
-                    0.1,
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=rp_atual,
+                    step=0.1,
                 )
 
 
@@ -3102,6 +3936,74 @@ with tab_barros:
                     st.rerun()
 
 
+            confirma_exc_barro = st.checkbox(
+                "Confirmar exclusao deste barro",
+                key=f"conf_exc_barro_{sel}",
+            )
+
+            if st.button(
+                "Excluir Barro Selecionado",
+                key=f"btn_exc_barro_{sel}",
+            ):
+
+                if not confirma_exc_barro:
+
+                    st.error(
+                        "Marque a caixa para confirmar a exclusao."
+                    )
+
+                else:
+
+                    usado_lotes = False
+                    usado_puro = False
+
+                    if len(st.session_state.df_master) > 0:
+
+                        usado_lotes = (
+                            (
+                                st.session_state.df_master["cod_barro_preto"]
+                                == sel
+                            ).any()
+                            or (
+                                st.session_state.df_master["cod_barro_amarelo"]
+                                == sel
+                            ).any()
+                            or (
+                                st.session_state.df_master["cod_barro_branco"]
+                                == sel
+                            ).any()
+                        )
+
+                    if len(st.session_state.analises_puro) > 0:
+
+                        usado_puro = (
+                            st.session_state.analises_puro["codigo_barro"]
+                            == sel
+                        ).any()
+
+
+                    if usado_lotes or usado_puro:
+
+                        st.error(
+                            "Este barro esta em uso em lotes ou analises. "
+                            "Nao e possivel excluir. Marque como Inativo."
+                        )
+
+                    else:
+
+                        st.session_state.catalogo_barros = (
+                            st.session_state.catalogo_barros[
+                                st.session_state.catalogo_barros["codigo"]
+                                != sel
+                            ].reset_index(drop=True)
+                        )
+
+                        persistir_dados("barros")
+
+                        st.success("Barro excluido.")
+                        st.rerun()
+
+
     st.divider()
 
     st.dataframe(
@@ -3146,34 +4048,34 @@ with tab_produtos:
 
             n_larg = st.number_input(
                 "Largura (cm)",
-                5.0,
-                30.0,
-                9.0,
-                0.5,
+                min_value=5.0,
+                max_value=30.0,
+                value=None,
+                step=0.5,
             )
 
             n_nom = st.number_input(
                 "Comprimento Nominal (cm)",
-                5.0,
-                50.0,
-                19.0,
-                0.5,
+                min_value=5.0,
+                max_value=50.0,
+                value=None,
+                step=0.5,
             )
 
             n_verde = st.number_input(
                 "Comprimento Verde Ideal (cm)",
-                5.0,
-                55.0,
-                20.0,
-                0.5,
+                min_value=5.0,
+                max_value=55.0,
+                value=None,
+                step=0.5,
             )
 
             n_peso = st.number_input(
                 "Peso Padrao (kg)",
-                0.5,
-                15.0,
-                2.8,
-                0.05,
+                min_value=0.5,
+                max_value=15.0,
+                value=None,
+                step=0.05,
                 format="%.3f",
             )
 
@@ -3194,6 +4096,13 @@ with tab_produtos:
 
                 st.error(
                     "Informe codigo e descricao."
+                )
+
+
+            elif not campos_ok(n_larg, n_nom, n_verde, n_peso):
+
+                st.error(
+                    "Preencha largura, comprimentos e peso padrao."
                 )
 
 
@@ -3247,7 +4156,7 @@ with tab_produtos:
     with cp2:
 
         st.subheader(
-            "Editar Produto"
+            "Editar / Excluir Produto"
         )
 
 
@@ -3298,40 +4207,40 @@ with tab_produtos:
 
                 ep_larg = st.number_input(
                     "Largura (cm)",
-                    5.0,
-                    30.0,
-                    float(atual["largura"]),
-                    0.5,
+                    min_value=5.0,
+                    max_value=30.0,
+                    value=float(atual["largura"]),
+                    step=0.5,
                 )
 
                 ep_nom = st.number_input(
                     "Comprimento Nominal (cm)",
-                    5.0,
-                    50.0,
-                    float(
+                    min_value=5.0,
+                    max_value=50.0,
+                    value=float(
                         atual["comprimento_nominal"]
                     ),
-                    0.5,
+                    step=0.5,
                 )
 
                 ep_verde = st.number_input(
                     "Comprimento Verde Ideal (cm)",
-                    5.0,
-                    55.0,
-                    float(
+                    min_value=5.0,
+                    max_value=55.0,
+                    value=float(
                         atual["comp_seco_ideal"]
                     ),
-                    0.5,
+                    step=0.5,
                 )
 
                 ep_peso = st.number_input(
                     "Peso Padrao (kg)",
-                    0.5,
-                    15.0,
-                    float(
+                    min_value=0.5,
+                    max_value=15.0,
+                    value=float(
                         atual["peso_padrao"]
                     ),
-                    0.05,
+                    step=0.05,
                     format="%.3f",
                 )
 
@@ -3462,6 +4371,56 @@ with tab_produtos:
                     )
 
                     st.rerun()
+
+
+            confirma_exc_prod = st.checkbox(
+                "Confirmar exclusao deste produto",
+                key=f"conf_exc_prod_{prod_sel}",
+            )
+
+            if st.button(
+                "Excluir Produto Selecionado",
+                key=f"btn_exc_prod_{prod_sel}",
+            ):
+
+                if not confirma_exc_prod:
+
+                    st.error(
+                        "Marque a caixa para confirmar a exclusao."
+                    )
+
+                else:
+
+                    usado = False
+
+                    if len(st.session_state.df_master) > 0:
+
+                        usado = (
+                            st.session_state.df_master["tipo_bloco"]
+                            == prod_sel
+                        ).any()
+
+
+                    if usado:
+
+                        st.error(
+                            "Este produto esta em uso em lotes. "
+                            "Nao e possivel excluir. Marque como Inativo."
+                        )
+
+                    else:
+
+                        st.session_state.catalogo_produtos = (
+                            st.session_state.catalogo_produtos[
+                                st.session_state.catalogo_produtos["codigo"]
+                                != prod_sel
+                            ].reset_index(drop=True)
+                        )
+
+                        persistir_dados("produtos")
+
+                        st.success("Produto excluido.")
+                        st.rerun()
 
 
     st.divider()
