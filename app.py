@@ -1193,7 +1193,7 @@ with tab_diag:
             if campos_ok(prod_dia, custo_barro):
                 ton_perdidas_dia = excesso_g / 1000 * prod_dia / 1000
                 prejuizo_dia = ton_perdidas_dia * custo_barro
-                prejuizo_mes = prejuizo_dia * 25
+                prejuizo_mes = prejuizo_dia * 26
 
                 st.error(
                     f"Desperdicio estimado: {ton_perdidas_dia:.2f} toneladas/dia\n\n"
